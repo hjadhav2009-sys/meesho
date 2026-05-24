@@ -19,6 +19,10 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
+  if (pathname === "/network-blocked") {
+    return NextResponse.next();
+  }
+
   if (process.env.LOCAL_NETWORK_ONLY === "true") {
     const ranges = process.env.ALLOWED_IP_RANGES ?? "192.168.0.0/16,10.0.0.0/8,172.16.0.0/12";
 
