@@ -34,7 +34,7 @@ export default async function OwnerUsersPage({ searchParams }: UsersPageProps) {
       <PageHeader
         eyebrow="Security"
         title="User sessions and access"
-        description="Review recent devices and deactivate a worker login if an unknown device appears. User creation and password changes are planned for Sprint 2."
+        description="Review recent devices and deactivate a worker login if an unknown device appears. User creation and password changes are planned for a later sprint."
       />
 
       {params?.deactivated ? (

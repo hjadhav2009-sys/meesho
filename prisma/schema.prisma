@@ -182,6 +182,7 @@ model UploadBatch {
   notes           String?
   orders          Order[]
   issues          ImportRowIssue[]
+  previewRows     UploadPreviewRow[]
   createdAt       DateTime         @default(now())
   updatedAt       DateTime         @updatedAt
 
@@ -272,4 +273,30 @@ model ImportRowIssue {
   createdAt DateTime    @default(now())
 
   @@index([batchId, issueType])
+}
+
+model UploadPreviewRow {
+  id                 String      @id @default(cuid())
+  batchId            String
+  batch              UploadBatch @relation(fields: [batchId], references: [id], onDelete: Cascade)
+  sourceType         String
+  pageNumber         Int?
+  awb                String?
+  courier            String?
+  sku                String?
+  qty                Int?
+  color              String?
+  size               String?
+  orderNo            String?
+  productDescription String?
+  paymentType        PaymentType @default(UNKNOWN)
+  confidence         Int         @default(0)
+  rawData            String?
+  issues             String?
+  imported           Boolean     @default(false)
+  createdAt          DateTime    @default(now())
+
+  @@index([batchId, sourceType])
+  @@index([batchId, awb])
+  @@index([batchId, sku])
 }

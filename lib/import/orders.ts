@@ -45,6 +45,38 @@ function hasSafeOrderChanges(existing: ExistingOrder, row: ParsedOrderImportRow)
   );
 }
 
+function withImportStats(
+  notes: string | null,
+  stats: {
+    attemptedRows: number;
+    createdRows: number;
+    updatedRows: number;
+    duplicateRows: number;
+    missingImageRows: number;
+    skippedRows: number;
+    errorRows: number;
+  }
+) {
+  let parsed: Record<string, unknown> = {};
+
+  if (notes) {
+    try {
+      const value = JSON.parse(notes);
+      parsed = typeof value === "object" && value ? (value as Record<string, unknown>) : {};
+    } catch {
+      parsed = {};
+    }
+  }
+
+  return JSON.stringify({
+    ...parsed,
+    importStats: {
+      ...stats,
+      confirmedAt: new Date().toISOString()
+    }
+  });
+}
+
 export function planOrderImport(
   existingOrders: ExistingOrder[],
   rows: ParsedOrderImportRow[],
@@ -93,17 +125,25 @@ export async function importParsedOrderRows(input: {
   account: Account;
   user: User;
   request?: RequestMeta;
+  batchId?: string;
 }) {
-  const batch = await prisma.uploadBatch.create({
-    data: {
-      accountId: input.account.id,
-      createdByUserId: input.user.id,
-      fileName: input.fileName,
-      importType: "ORDER_LABEL",
-      status: "PARSED",
-      totalRows: input.rows.length
-    }
-  });
+  const batch = input.batchId
+    ? await prisma.uploadBatch.update({
+        where: { id: input.batchId },
+        data: {
+          status: "PARSED"
+        }
+      })
+    : await prisma.uploadBatch.create({
+        data: {
+          accountId: input.account.id,
+          createdByUserId: input.user.id,
+          fileName: input.fileName,
+          importType: "ORDER_LABEL",
+          status: "PARSED",
+          totalRows: input.rows.length
+        }
+      });
 
   const awbs = input.rows.map((row) => trimValue(row.awb)).filter(Boolean);
   const skus = input.rows.map((row) => trimValue(row.sku)).filter(Boolean);
@@ -206,18 +246,39 @@ export async function importParsedOrderRows(input: {
     });
   }
 
-  const updatedBatch = await prisma.uploadBatch.update({
-    where: { id: batch.id },
-    data: {
-      status: plan.errors.length > 0 ? "REVIEWED" : "IMPORTED",
-      createdRows: plan.created.length,
-      updatedRows: plan.updated.length,
-      duplicateRows: plan.duplicates.length,
-      missingImageRows: plan.missingImageRows.length,
-      skippedRows: plan.duplicates.length,
-      errorRows: plan.errors.length
-    }
-  });
+  const importStats = {
+    attemptedRows: input.rows.length,
+    createdRows: plan.created.length,
+    updatedRows: plan.updated.length,
+    duplicateRows: plan.duplicates.length,
+    missingImageRows: plan.missingImageRows.length,
+    skippedRows: plan.duplicates.length,
+    errorRows: plan.errors.length
+  };
+  const updatedBatch = input.batchId
+    ? await prisma.uploadBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: plan.errors.length > 0 ? "REVIEWED" : "IMPORTED",
+          createdRows: plan.created.length,
+          updatedRows: plan.updated.length,
+          duplicateRows: plan.duplicates.length,
+          notes: withImportStats(batch.notes, importStats)
+        }
+      })
+    : await prisma.uploadBatch.update({
+        where: { id: batch.id },
+        data: {
+          status: plan.errors.length > 0 ? "REVIEWED" : "IMPORTED",
+          createdRows: plan.created.length,
+          updatedRows: plan.updated.length,
+          duplicateRows: plan.duplicates.length,
+          missingImageRows: plan.missingImageRows.length,
+          skippedRows: plan.duplicates.length,
+          errorRows: plan.errors.length,
+          notes: withImportStats(batch.notes, importStats)
+        }
+      });
 
   await recordAuditLog({
     userId: input.user.id,
