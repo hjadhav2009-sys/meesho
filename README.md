@@ -2,10 +2,10 @@
 
 Production-ready foundation for a small ecommerce seller's daily Meesho warehouse workflow.
 
-The app supports the sprint-0 flow:
+The app supports the daily local warehouse flow:
 
-- Owner uploads a Meesho label PDF batch placeholder.
-- Future parser model fields are ready for AWB, courier, SKU, quantity, color, order number, product description, payment type, city, and state.
+- Owner uploads Meesho label and/or supplier manifest PDFs for parser review.
+- The parser extracts AWB, courier, SKU, quantity, color, size, order number, product description, payment type, and related invoice fields where available.
 - Owner maps SKU to a Meesho product image URL. Product files are not stored.
 - Picker sees SKU-grouped mobile-first product cards.
 - Packer searches/scans AWB, verifies order details, confirms packed, or marks a problem order.
@@ -89,8 +89,8 @@ Workers do not need the codebase, VS Code, terminal, Prisma, or npm. Keep those 
 Every app page except the login screen requires an active login. Use strong passwords, keep the owner password private,
 and deactivate worker users from **Owner -> Users** if an unknown phone or browser appears.
 
-In Sprint 1, **Owner -> Users** is intentionally limited to session review and deactivation. User creation and password
-changes are planned for Sprint 2.
+**Owner -> Users** is intentionally limited to session review and deactivation. User creation and password changes are
+planned for a later sprint.
 
 Optional local network protection:
 
@@ -159,6 +159,39 @@ Common alternate names are accepted, including `SKU`, `sku_code`, `supplier_sku`
 Existing mappings are upserted by `accountId + sku`. Same URL/data is counted as unchanged; changed rows update the
 stored URL and metadata. Product image files are never stored.
 
+## Supported Meesho PDFs
+
+The owner upload page supports text-based Meesho seller PDFs:
+
+- Meesho Sub Order Labels, usually named `Sub_Order_Labels_*.pdf`
+- Meesho Supplier Manifest / Picklist, usually named `Supplier_Manifest_*.pdf`
+
+Upload a label PDF, a manifest/picklist PDF, or both. The app parses the file on the server, stores review rows, and
+does not persist the original PDF.
+
+## Parser Design
+
+Sprint 2 uses server-side text extraction and layout-tolerant reconstruction:
+
+- PDF text is extracted page by page with an open-source Node parser.
+- Label pages are anchored around invoice, AWB, courier, and Product Details text.
+- Manifest courier tables are reconstructed from line groups so wrapped sub order numbers and wrapped SKUs can be fixed.
+- Hidden/control separators in SKUs are normalized, for example `SUL-PN-BC-SS-BL...Allah40` becomes `SUL-PN-BC-SS-BL-Allah40`.
+- Each parsed row gets a confidence score and issue badges.
+- Rows with missing AWB or SKU are held for review and are not imported as normal orders.
+- Uploading both labels and manifest enables cross-checks for missing AWBs, SKU mismatches, quantity mismatches, courier warnings, and picklist total mismatches.
+
+OCR for scanned or image-only PDFs is planned for a later sprint. If parser confidence is low, the owner should review
+the row before confirming import.
+
+## Daily Workflow
+
+1. Upload label PDF and/or manifest PDF from **Owner -> Upload labels**.
+2. Review parsed rows, confidence, duplicates, missing AWBs/SKUs, missing image mappings, and cross-check issues.
+3. Fix missing SKU image mappings when needed.
+4. Confirm import. Orders flow through the duplicate-safe `accountId + AWB` importer.
+5. Workers pick by SKU and pack by AWB from their phone browsers on the same Wi-Fi.
+
 ## Duplicate Protection
 
 Orders are protected by the unique key `accountId + awb`. Re-uploading old + new Meesho picklist/label files will not
@@ -210,11 +243,9 @@ Then set `DATABASE_URL` to the Supabase PostgreSQL connection string.
 - The foundation stores only operational order fields needed for picking and packing.
 - Product image files are not stored. Only `imageUrl` is stored for SKU mapping.
 - Customer personal data is intentionally minimal. City/state are optional parser outputs.
-- The upload action does not persist label PDFs yet.
+- Upload actions do not persist raw PDF files.
 - The app does not scrape Meesho.
 
-## Future Parser And Scanner Hooks
+## Future Scanner Hooks
 
-- Add PDF parsing behind `createUploadBatchAction` in `app/owner/uploads/actions.ts`.
-- Insert parsed rows into `Order` and show them on `/owner/uploads/[batchId]/review`.
 - Add a browser barcode scanner to `/packing` and submit scanned AWBs through `searchAwbAction`.

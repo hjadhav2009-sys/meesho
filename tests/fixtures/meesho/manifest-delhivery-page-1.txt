@@ -1,0 +1,19 @@
+Courier : Delhivery
+Supplier Name : Sullery
+Date : 24.05.2026
+S. No. Sub Order No. AWB SKU Qty. Size Packed
+1 29001075610
+4090432_1
+1490834915493571
+1202919298_6
+1
+Free Size
+No
+2 29001075610
+4090433_1
+1490834915493572
+SUL-PN-BC-SS-BL￾Allah40
+1
+Free Size
+No
+(2)

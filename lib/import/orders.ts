@@ -93,17 +93,25 @@ export async function importParsedOrderRows(input: {
   account: Account;
   user: User;
   request?: RequestMeta;
+  batchId?: string;
 }) {
-  const batch = await prisma.uploadBatch.create({
-    data: {
-      accountId: input.account.id,
-      createdByUserId: input.user.id,
-      fileName: input.fileName,
-      importType: "ORDER_LABEL",
-      status: "PARSED",
-      totalRows: input.rows.length
-    }
-  });
+  const batch = input.batchId
+    ? await prisma.uploadBatch.update({
+        where: { id: input.batchId },
+        data: {
+          status: "PARSED"
+        }
+      })
+    : await prisma.uploadBatch.create({
+        data: {
+          accountId: input.account.id,
+          createdByUserId: input.user.id,
+          fileName: input.fileName,
+          importType: "ORDER_LABEL",
+          status: "PARSED",
+          totalRows: input.rows.length
+        }
+      });
 
   const awbs = input.rows.map((row) => trimValue(row.awb)).filter(Boolean);
   const skus = input.rows.map((row) => trimValue(row.sku)).filter(Boolean);
