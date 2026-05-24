@@ -1,7 +1,7 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { isAllowedLocalNetworkIp, normalizeIp } from "./lib/network";
 
-const PUBLIC_PATHS = ["/login", "/network-blocked"];
+const PUBLIC_PATHS = ["/login", "/network-blocked", "/setup"];
 const STATIC_FILE = /\.(?:svg|png|jpg|jpeg|gif|webp|ico|txt|xml|webmanifest)$/;
 
 function isPublicPath(pathname: string) {
