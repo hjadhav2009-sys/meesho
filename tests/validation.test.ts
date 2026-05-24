@@ -13,6 +13,7 @@ import { hashPassword } from "../lib/password";
 import { runProductionChecks, summarizeProductionChecks } from "../lib/production-checks";
 import { getInitialProductImageState } from "../lib/product-image";
 import { cutoffDate, isCleanupConfirmationValid, RETENTION_DAYS } from "../lib/retention";
+import { canUseFirstRunSetup, validateFirstRunSetupPassword } from "../lib/setup";
 import { canDeactivateUser, shouldCloseSessionsAfterPasswordReset, validateWorkerPassword } from "../lib/user-management";
 import {
   awbSearchSchema,
@@ -200,6 +201,11 @@ assert.equal(canDeactivateUser("u1", "u1"), false, "Owner cannot deactivate self
 assert.equal(canDeactivateUser("u1", "u2"), true, "Owner can deactivate another user");
 assert.equal(shouldCloseSessionsAfterPasswordReset("owner", "worker"), true, "Owner reset closes worker sessions");
 assert.equal(shouldCloseSessionsAfterPasswordReset("owner", "owner"), false, "Owner self password change keeps current sessions");
+assert.equal(canUseFirstRunSetup(0), true, "First-run setup is allowed when there are no users");
+assert.equal(canUseFirstRunSetup(1), false, "First-run setup is blocked after any user exists");
+assert.equal(validateFirstRunSetupPassword("demo1234", "demo1234").valid, false, "Setup reuses demo password rejection");
+assert.equal(validateFirstRunSetupPassword("better123", "different123").valid, false, "Setup rejects mismatched passwords");
+assert.equal(validateFirstRunSetupPassword("better123", "better123").valid, true, "Setup accepts valid matching password");
 
 assert.equal(normalizeIp("::ffff:192.168.1.10"), "192.168.1.10", "IPv4-mapped IPs normalize");
 assert.equal(isIpInCidr("192.168.1.10", "192.168.0.0/16"), true, "Local CIDR allows Wi-Fi IP");

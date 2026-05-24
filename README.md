@@ -152,6 +152,16 @@ npm run db:migrate:prod
 npm start
 ```
 
+After the first production deploy, the Supabase database may have no users because Hostinger does not provide
+terminal access for `npm run db:seed`. If login fails because no users exist, open:
+
+```text
+https://pack.personalizedgiftday.com/setup
+```
+
+Create the first owner user and first account there. The setup page only works while the `User` table is empty;
+after the first user exists it redirects to `/login`.
+
 Production still supports the explicit production helpers:
 
 ```bash
@@ -165,6 +175,7 @@ npm run start:prod
 - Use a strong `SESSION_SECRET`.
 - Confirm the deployed branch is `main`.
 - Confirm `https://pack.personalizedgiftday.com` loads over HTTPS.
+- On a fresh Supabase database, open `/setup` once to create the first owner and account.
 - Test login.
 - Test account selection.
 - Test SKU image import.

@@ -6,6 +6,7 @@ import { loginAction } from "./actions";
 type LoginPageProps = {
   searchParams?: Promise<{
     error?: string;
+    setup?: string;
   }>;
 };
 
@@ -19,6 +20,7 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
   const params = await searchParams;
   const hasInvalidError = params?.error === "invalid";
   const hasLockedError = params?.error === "locked";
+  const hasSetupComplete = params?.setup === "1";
 
   return (
     <main className="flex min-h-screen items-center justify-center bg-stone-50 px-4 py-10">
@@ -30,6 +32,12 @@ export default async function LoginPage({ searchParams }: LoginPageProps) {
             Local username and password login for the sprint-0 warehouse workflow.
           </p>
         </div>
+
+        {hasSetupComplete ? (
+          <div className="mb-4 rounded-md border border-emerald-200 bg-emerald-50 px-4 py-3 text-sm font-medium text-emerald-700">
+            Setup complete. Login with your owner account.
+          </div>
+        ) : null}
 
         {hasInvalidError || hasLockedError ? (
           <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
