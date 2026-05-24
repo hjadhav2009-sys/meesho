@@ -35,6 +35,8 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
 
   const { order, mapping } = result;
   const canPack = order.packStatus === "READY";
+  const canReportProblem = order.packStatus === "READY";
+  const openProblem = order.problemOrders[0];
   const imageUrl = order.imageUrl ?? mapping?.imageUrl;
 
   return (
@@ -140,45 +142,87 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
           </div>
 
           <div className="grid gap-5 md:grid-cols-2">
-            <form action={confirmPackedAction} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-              <input type="hidden" name="orderId" value={order.id} />
-              <h3 className="font-semibold text-slate-950">Confirm packed</h3>
-              <p className="mt-2 text-sm leading-6 text-slate-600">
-                Use this after matching the label, product image, SKU, color, and quantity.
-              </p>
-              <div className="mt-4">
-                <SubmitButton pendingText="Confirming..." variant={canPack ? "primary" : "secondary"}>
-                  {canPack ? "Confirm packed" : "Already packed"}
-                </SubmitButton>
+            {canPack ? (
+              <form action={confirmPackedAction} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+                <input type="hidden" name="orderId" value={order.id} />
+                <h3 className="font-semibold text-slate-950">Confirm packed</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Use this after matching the label, product image, SKU, color, and quantity.
+                </p>
+                <div className="mt-4">
+                  <SubmitButton pendingText="Confirming...">Confirm packed</SubmitButton>
+                </div>
+              </form>
+            ) : order.packStatus === "PACKED" ? (
+              <div className="rounded-md border border-teal-200 bg-teal-50 p-4 shadow-sm">
+                <h3 className="font-semibold text-teal-900">Already packed</h3>
+                <p className="mt-2 text-sm leading-6 text-teal-800">
+                  This order has already been confirmed packed. No duplicate update is needed.
+                </p>
+                {order.packedAt ? (
+                  <p className="mt-3 text-sm font-semibold text-teal-900">
+                    Packed at {formatDateTime(order.packedAt)}
+                  </p>
+                ) : (
+                  <p className="mt-3 text-sm font-semibold text-teal-900">Packed time not recorded.</p>
+                )}
               </div>
-            </form>
+            ) : (
+              <div className="rounded-md border border-amber-200 bg-amber-50 p-4 shadow-sm">
+                <h3 className="font-semibold text-amber-950">Problem order</h3>
+                <p className="mt-2 text-sm leading-6 text-amber-900">
+                  Packing is paused for this AWB until the problem is resolved.
+                </p>
+                {openProblem ? (
+                  <p className="mt-3 text-sm text-amber-900">
+                    {openProblem.reason} - reported by {openProblem.reportedBy?.name ?? "Unknown"} on {formatDateTime(openProblem.createdAt)}
+                  </p>
+                ) : null}
+              </div>
+            )}
 
-            <form action={reportProblemFromScanAction} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-              <input type="hidden" name="orderId" value={order.id} />
-              <h3 className="font-semibold text-slate-950">Mark problem</h3>
-              <label className="mt-3 block">
-                <span className="text-sm font-medium text-slate-700">Reason</span>
-                <input
-                  name="reason"
-                  required
-                  placeholder="Missing item, color mismatch..."
-                  className="mt-1 min-h-11 w-full rounded-md border border-slate-300 px-3 py-2 outline-none transition focus:border-berry focus:ring-2 focus:ring-pink-100"
-                />
-              </label>
-              <label className="mt-3 block">
-                <span className="text-sm font-medium text-slate-700">Details</span>
-                <textarea
-                  name="details"
-                  rows={3}
-                  className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none transition focus:border-berry focus:ring-2 focus:ring-pink-100"
-                />
-              </label>
-              <div className="mt-4">
-                <SubmitButton pendingText="Saving..." variant="secondary">
-                  Save problem
-                </SubmitButton>
+            {canReportProblem ? (
+              <form action={reportProblemFromScanAction} className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+                <input type="hidden" name="orderId" value={order.id} />
+                <h3 className="font-semibold text-slate-950">Mark problem</h3>
+                <label className="mt-3 block">
+                  <span className="text-sm font-medium text-slate-700">Reason</span>
+                  <input
+                    name="reason"
+                    required
+                    placeholder="Missing item, color mismatch..."
+                    className="mt-1 min-h-11 w-full rounded-md border border-slate-300 px-3 py-2 outline-none transition focus:border-berry focus:ring-2 focus:ring-pink-100"
+                  />
+                </label>
+                <label className="mt-3 block">
+                  <span className="text-sm font-medium text-slate-700">Details</span>
+                  <textarea
+                    name="details"
+                    rows={3}
+                    className="mt-1 w-full rounded-md border border-slate-300 px-3 py-2 outline-none transition focus:border-berry focus:ring-2 focus:ring-pink-100"
+                  />
+                </label>
+                <div className="mt-4">
+                  <SubmitButton pendingText="Saving..." variant="secondary">
+                    Save problem
+                  </SubmitButton>
+                </div>
+              </form>
+            ) : order.packStatus === "PACKED" ? (
+              <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+                <h3 className="font-semibold text-slate-950">Problem reporting closed</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  Packed orders cannot be marked as a new problem from this screen.
+                </p>
               </div>
-            </form>
+            ) : (
+              <div className="rounded-md border border-amber-200 bg-white p-4 shadow-sm">
+                <h3 className="font-semibold text-slate-950">Problem already open</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">
+                  This order already has an open problem, so no duplicate problem form is shown.
+                </p>
+              </div>
+            )}
           </div>
 
           <div className="rounded-md border border-slate-200 bg-white shadow-sm">

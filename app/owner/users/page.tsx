@@ -94,7 +94,8 @@ export default async function OwnerUsersPage({ searchParams }: UsersPageProps) {
           <TextField name="password" label="Temporary password" type="password" placeholder="At least 8 characters" />
           <div className="md:col-span-2 xl:col-span-5">
             <p className="mb-3 text-sm text-slate-500">
-              Avoid demo passwords. New users are asked to change the temporary password after login.
+              Avoid demo passwords. Use at least 12 characters with letters, numbers, and a symbol for production.
+              New users are asked to change the temporary password after login.
             </p>
             <SubmitButton pendingText="Creating...">Create user</SubmitButton>
           </div>
@@ -188,7 +189,8 @@ export default async function OwnerUsersPage({ searchParams }: UsersPageProps) {
                   <h3 className="font-semibold text-slate-950">Change password</h3>
                   <TextField name="password" label="New password" type="password" placeholder="At least 8 characters" />
                   <p className="mt-2 text-sm text-slate-500">
-                    Workers are asked to change owner-set passwords after login.
+                    Use at least 12 characters with letters, numbers, and a symbol for production.
+                    Resetting another user&apos;s password closes their active sessions.
                   </p>
                   <div className="mt-4">
                     <SubmitButton pendingText="Changing..." variant="secondary">

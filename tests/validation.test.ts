@@ -9,7 +9,7 @@ import { isAllowedLocalNetworkIp, isIpInCidr, normalizeIp } from "../lib/network
 import { canConfirmPacked } from "../lib/operations/packing";
 import { buildPickerSkuGroups } from "../lib/operations/picking";
 import { getInitialProductImageState } from "../lib/product-image";
-import { canDeactivateUser, validateWorkerPassword } from "../lib/user-management";
+import { canDeactivateUser, shouldCloseSessionsAfterPasswordReset, validateWorkerPassword } from "../lib/user-management";
 import {
   awbSearchSchema,
   loginSchema,
@@ -192,6 +192,8 @@ assert.equal(validateWorkerPassword("demo1234").valid, false, "Demo password is 
 assert.equal(validateWorkerPassword("better123").valid, true, "Usable worker password passes");
 assert.equal(canDeactivateUser("u1", "u1"), false, "Owner cannot deactivate self");
 assert.equal(canDeactivateUser("u1", "u2"), true, "Owner can deactivate another user");
+assert.equal(shouldCloseSessionsAfterPasswordReset("owner", "worker"), true, "Owner reset closes worker sessions");
+assert.equal(shouldCloseSessionsAfterPasswordReset("owner", "owner"), false, "Owner self password change keeps current sessions");
 
 assert.equal(normalizeIp("::ffff:192.168.1.10"), "192.168.1.10", "IPv4-mapped IPs normalize");
 assert.equal(isIpInCidr("192.168.1.10", "192.168.0.0/16"), true, "Local CIDR allows Wi-Fi IP");

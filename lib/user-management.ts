@@ -39,3 +39,7 @@ export function canChangeUserRole(actorId: string, targetId: string, currentRole
 
   return true;
 }
+
+export function shouldCloseSessionsAfterPasswordReset(actorId: string, targetId: string) {
+  return actorId !== targetId;
+}

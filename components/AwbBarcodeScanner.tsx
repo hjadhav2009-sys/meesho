@@ -107,6 +107,7 @@ export function AwbBarcodeScanner({ action, defaultAwb }: AwbBarcodeScannerProps
         }
 
         lastScanAtRef.current = now;
+        navigator.vibrate?.(80);
         submitDetectedAwb(awb);
       };
 

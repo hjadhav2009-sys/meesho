@@ -8,7 +8,12 @@ import { recordAuditLog } from "@/lib/audit";
 import { hashPassword } from "@/lib/password";
 import { prisma } from "@/lib/prisma";
 import { getRequestMeta } from "@/lib/request-context";
-import { canChangeUserRole, canDeactivateUser, validateWorkerPassword } from "@/lib/user-management";
+import {
+  canChangeUserRole,
+  canDeactivateUser,
+  shouldCloseSessionsAfterPasswordReset,
+  validateWorkerPassword
+} from "@/lib/user-management";
 
 function parseRole(value: FormDataEntryValue | null): Role | null {
   return value === "OWNER" || value === "PICKER" || value === "PACKER" ? value : null;
@@ -175,15 +180,41 @@ export async function changeUserPasswordAction(formData: FormData) {
     redirect("/owner/users?error=invalid");
   }
 
-  await prisma.user.update({
-    where: { id: user.id },
-    data: {
-      passwordHash: hashPassword(password),
-      mustChangePassword: user.id !== owner.id,
-      failedLoginCount: 0,
-      lockedUntil: null
-    }
-  });
+  const sessionsClosed = shouldCloseSessionsAfterPasswordReset(owner.id, user.id);
+
+  if (sessionsClosed) {
+    await prisma.$transaction([
+      prisma.user.update({
+        where: { id: user.id },
+        data: {
+          passwordHash: hashPassword(password),
+          mustChangePassword: true,
+          failedLoginCount: 0,
+          lockedUntil: null
+        }
+      }),
+      prisma.userDeviceSession.updateMany({
+        where: {
+          userId: user.id,
+          active: true
+        },
+        data: {
+          active: false,
+          lastSeenAt: new Date()
+        }
+      })
+    ]);
+  } else {
+    await prisma.user.update({
+      where: { id: user.id },
+      data: {
+        passwordHash: hashPassword(password),
+        mustChangePassword: false,
+        failedLoginCount: 0,
+        lockedUntil: null
+      }
+    });
+  }
 
   await recordAuditLog({
     userId: owner.id,
@@ -191,7 +222,7 @@ export async function changeUserPasswordAction(formData: FormData) {
     action: "USER_PASSWORD_CHANGED",
     entityType: "User",
     entityId: user.id,
-    metadata: { username: user.username, changedByOwner: true, mustChangePassword: user.id !== owner.id },
+    metadata: { username: user.username, changedByOwner: true, mustChangePassword: sessionsClosed, sessionsClosed },
     request
   });
 

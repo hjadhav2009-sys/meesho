@@ -201,6 +201,12 @@ export async function getOrderWithImage(accountId: string, awb: string) {
     },
     include: {
       account: true,
+      problemOrders: {
+        where: { status: "OPEN" },
+        orderBy: { createdAt: "desc" },
+        take: 1,
+        include: { reportedBy: true }
+      },
       scanLogs: {
         orderBy: { createdAt: "desc" },
         take: 5,
