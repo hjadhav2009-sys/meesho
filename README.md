@@ -87,7 +87,10 @@ Workers do not need the codebase, VS Code, terminal, Prisma, or npm. Keep those 
 ## Same Wi-Fi Security
 
 Every app page except the login screen requires an active login. Use strong passwords, keep the owner password private,
-and deactivate worker users from **Owner → Users** if an unknown phone or browser appears.
+and deactivate worker users from **Owner -> Users** if an unknown phone or browser appears.
+
+In Sprint 1, **Owner -> Users** is intentionally limited to session review and deactivation. User creation and password
+changes are planned for Sprint 2.
 
 Optional local network protection:
 
@@ -171,7 +174,7 @@ duplicate work:
 Only image URLs are stored. Images are loaded directly from their source URL in the browser; the app does not proxy,
 download, or store image files.
 
-If an image URL is missing or fails in the browser, product cards show a clean fallback with a “Check URL” prompt. Broken
+If an image URL is missing or fails in the browser, product cards show a clean fallback with a "Check URL" prompt. Broken
 mapping health is recorded for owner reports when the browser detects a load failure.
 
 ## Useful Scripts

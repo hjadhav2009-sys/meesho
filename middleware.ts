@@ -15,7 +15,7 @@ function getRequestIp(request: NextRequest) {
 export function middleware(request: NextRequest) {
   const { pathname } = request.nextUrl;
 
-  if (pathname.startsWith("/_next") || pathname.startsWith("/api") || STATIC_FILE.test(pathname)) {
+  if (pathname.startsWith("/_next") || STATIC_FILE.test(pathname)) {
     return NextResponse.next();
   }
 
@@ -28,6 +28,10 @@ export function middleware(request: NextRequest) {
       blockedUrl.search = "";
       return NextResponse.rewrite(blockedUrl);
     }
+  }
+
+  if (pathname.startsWith("/api")) {
+    return NextResponse.next();
   }
 
   if (!isPublicPath(pathname) && !request.cookies.get("mpp_session")) {

@@ -71,6 +71,7 @@ export default async function ParseReviewPage({ params }: ReviewPageProps) {
           ["Created", batch.createdRows],
           ["Updated", batch.updatedRows],
           ["Duplicates", batch.duplicateRows],
+          ["Missing images", batch.missingImageRows],
           ["Skipped", batch.skippedRows],
           ["Errors", batch.errorRows]
         ].map(([label, value]) => (

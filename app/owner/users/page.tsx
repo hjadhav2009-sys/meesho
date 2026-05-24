@@ -33,8 +33,8 @@ export default async function OwnerUsersPage({ searchParams }: UsersPageProps) {
     <AppShell>
       <PageHeader
         eyebrow="Security"
-        title="Users and device sessions"
-        description="Review recent devices and deactivate a worker account if an unknown device appears."
+        title="User sessions and access"
+        description="Review recent devices and deactivate a worker login if an unknown device appears. User creation and password changes are planned for Sprint 2."
       />
 
       {params?.deactivated ? (
@@ -60,10 +60,10 @@ export default async function OwnerUsersPage({ searchParams }: UsersPageProps) {
                   <StatusBadge value={user.role} />
                 </div>
                 <p className="mt-1 text-sm text-slate-600">
-                  {user.username} · {user.account?.name ?? "All accounts"}
+                  {user.username} - {user.account?.name ?? "All accounts"}
                 </p>
                 <p className="mt-1 text-sm text-slate-500">
-                  Last login {formatDateTime(user.lastLoginAt)} · {user.lastLoginIp ?? "IP not recorded"}
+                  Last login {formatDateTime(user.lastLoginAt)} - {user.lastLoginIp ?? "IP not recorded"}
                 </p>
               </div>
               {user.active && user.id !== owner.id ? (

@@ -213,6 +213,7 @@ export async function importParsedOrderRows(input: {
       createdRows: plan.created.length,
       updatedRows: plan.updated.length,
       duplicateRows: plan.duplicates.length,
+      missingImageRows: plan.missingImageRows.length,
       skippedRows: plan.duplicates.length,
       errorRows: plan.errors.length
     }
@@ -229,6 +230,7 @@ export async function importParsedOrderRows(input: {
       createdRows: plan.created.length,
       updatedRows: plan.updated.length,
       duplicateRows: plan.duplicates.length,
+      missingImageRows: plan.missingImageRows.length,
       errorRows: plan.errors.length
     },
     request: input.request

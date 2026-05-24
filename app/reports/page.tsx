@@ -43,6 +43,7 @@ export default async function ReportsPage() {
                 <th className="px-4 py-3">Orders</th>
                 <th className="px-4 py-3">Date</th>
                 <th className="px-4 py-3">Updated</th>
+                <th className="px-4 py-3">Missing images</th>
                 <th className="px-4 py-3">Skipped</th>
                 <th className="px-4 py-3">Errors</th>
                 <th className="px-4 py-3">Created</th>
@@ -58,6 +59,7 @@ export default async function ReportsPage() {
                   <td className="px-4 py-3">{batch._count.orders}</td>
                   <td className="px-4 py-3">{batch.createdRows}</td>
                   <td className="px-4 py-3">{batch.updatedRows}</td>
+                  <td className="px-4 py-3">{batch.missingImageRows}</td>
                   <td className="px-4 py-3">{batch.skippedRows + batch.duplicateRows}</td>
                   <td className="px-4 py-3">{batch.errorRows}</td>
                   <td className="px-4 py-3">{formatDateTime(batch.createdAt)}</td>
@@ -65,7 +67,7 @@ export default async function ReportsPage() {
               ))}
               {summary.batches.length === 0 ? (
                 <tr>
-                  <td className="px-4 py-8 text-center text-slate-500" colSpan={8}>
+                  <td className="px-4 py-8 text-center text-slate-500" colSpan={9}>
                     No batches yet.
                   </td>
                 </tr>

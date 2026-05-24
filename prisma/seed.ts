@@ -113,6 +113,7 @@ async function main() {
       status: "IMPORTED",
       totalRows: 1,
       createdRows: 1,
+      missingImageRows: 0,
       notes: "Seeded sample batch for sprint-0 foundation."
     },
     create: {
@@ -124,6 +125,7 @@ async function main() {
       status: "IMPORTED",
       totalRows: 1,
       createdRows: 1,
+      missingImageRows: 0,
       notes: "Seeded sample batch for sprint-0 foundation."
     }
   });

@@ -110,6 +110,7 @@ CREATE TABLE "new_UploadBatch" (
     "createdRows" INTEGER NOT NULL DEFAULT 0,
     "updatedRows" INTEGER NOT NULL DEFAULT 0,
     "duplicateRows" INTEGER NOT NULL DEFAULT 0,
+    "missingImageRows" INTEGER NOT NULL DEFAULT 0,
     "skippedRows" INTEGER NOT NULL DEFAULT 0,
     "errorRows" INTEGER NOT NULL DEFAULT 0,
     "notes" TEXT,

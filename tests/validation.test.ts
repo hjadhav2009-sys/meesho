@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import { canAccessAccount, canRoleAccessPath } from "../lib/authz";
 import { planOrderImport } from "../lib/import/orders";
 import { planSkuMappingImport, type RawImportRow } from "../lib/import/sku-mappings";
+import { isAllowedLocalNetworkIp, isIpInCidr, normalizeIp } from "../lib/network";
 import { getInitialProductImageState } from "../lib/product-image";
 import {
   awbSearchSchema,
@@ -125,12 +126,22 @@ assert.equal(orderPlan.created.length, 1, "Order import creates new AWB");
 assert.equal(orderPlan.duplicates.length, 1, "Order import skips unchanged duplicate AWB");
 assert.equal(orderPlan.updated.length, 1, "Order import updates changed duplicate safely");
 assert.equal(orderPlan.errors[0]?.issueType, "MISSING_AWB", "Order import rejects missing AWB");
+assert.equal(orderPlan.missingImageRows.length, 0, "Mapped SKUs are not marked as missing image");
+
+const missingImagePlan = planOrderImport([], [{ awb: "NO_IMAGE", sku: "UNMAPPED", qty: 1, orderNo: "ORDER5" }], new Set());
+assert.equal(missingImagePlan.created.length, 1, "Missing image rows still import as orders");
+assert.equal(missingImagePlan.missingImageRows.length, 1, "Missing image rows are counted for review");
 
 assert.equal(canRoleAccessPath("OWNER", "/reports"), true, "Owner can access reports");
 assert.equal(canRoleAccessPath("PICKER", "/packing"), false, "Picker cannot access packing");
 assert.equal(canRoleAccessPath("PACKER", "/problems"), true, "Packer can access problems");
 assert.equal(canAccessAccount({ role: "PICKER", accountId: "a1" }, "a1"), true, "Assigned user can access account");
 assert.equal(canAccessAccount({ role: "PICKER", accountId: "a1" }, "a2"), false, "Assigned user cannot access other account");
+
+assert.equal(normalizeIp("::ffff:192.168.1.10"), "192.168.1.10", "IPv4-mapped IPs normalize");
+assert.equal(isIpInCidr("192.168.1.10", "192.168.0.0/16"), true, "Local CIDR allows Wi-Fi IP");
+assert.equal(isAllowedLocalNetworkIp("8.8.8.8", "192.168.0.0/16"), false, "External IP is blocked by local-only ranges");
+assert.equal(isAllowedLocalNetworkIp("127.0.0.1", "192.168.0.0/16"), true, "Localhost is always allowed");
 
 assert.equal(getInitialProductImageState(null), "missing", "Product image fallback handles missing URL");
 

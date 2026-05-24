@@ -12,6 +12,7 @@ export async function importSkuMappingFileAction(formData: FormData) {
   const user = await requireUser(["OWNER"]);
   const request = await getRequestMeta();
   const file = formData.get("mappingFile");
+  let batchId: string;
   const accountParsed = accountSelectionSchema.safeParse({
     accountId: formData.get("accountId")
   });
@@ -45,9 +46,10 @@ export async function importSkuMappingFileAction(formData: FormData) {
       user,
       request
     });
-
-    redirect(`/owner/sku-mappings/import?batchId=${batch.id}`);
+    batchId = batch.id;
   } catch {
     redirect("/owner/sku-mappings/import?error=parse");
   }
+
+  redirect(`/owner/sku-mappings/import?batchId=${batchId}`);
 }

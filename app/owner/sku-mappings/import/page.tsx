@@ -95,6 +95,7 @@ export default async function SkuMappingImportPage({ searchParams }: ImportPageP
                   ["Created", batch.createdRows],
                   ["Updated", batch.updatedRows],
                   ["Unchanged", batch.skippedRows],
+                  ["Missing images", batch.missingImageRows],
                   ["Errors", batch.errorRows],
                   ["Total", batch.totalRows]
                 ].map(([label, value]) => (
