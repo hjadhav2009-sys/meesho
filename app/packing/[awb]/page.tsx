@@ -8,6 +8,7 @@ import { SubmitButton } from "@/components/SubmitButton";
 import { requireAccount, requireUser } from "@/lib/auth";
 import { getOrderWithImage } from "@/lib/data";
 import { formatDateTime } from "@/lib/format";
+import { packingResultLabel } from "@/lib/operations/packing";
 import { confirmPackedAction, reportProblemFromScanAction } from "./actions";
 
 type ScanResultPageProps = {
@@ -41,18 +42,34 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
       <PageHeader
         eyebrow="Scan result"
         title={`AWB ${order.awb}`}
-        description="Verify the product image and order details before confirming the shipment is packed."
+        description="Verify the product image, SKU, quantity, color, courier, and order number before confirming packed."
       >
-        <StatusBadge value={order.packStatus} />
+        <div className="flex flex-wrap gap-2">
+          <StatusBadge value={order.packStatus} />
+          <Link
+            href="/packing"
+            className="rounded-md border border-slate-200 bg-white px-3 py-2 text-sm font-semibold text-slate-700 shadow-sm transition hover:border-berry hover:text-berry"
+          >
+            Scan next
+          </Link>
+        </div>
       </PageHeader>
 
-      {query?.packed ? (
+      {query?.packed === "already" ? (
+        <div className="mb-5 rounded-md border border-blue-200 bg-blue-50 px-4 py-3 text-sm font-medium text-blue-700">
+          This order is already packed. No duplicate update was made.
+        </div>
+      ) : query?.packed ? (
         <div className="mb-5 rounded-md border border-teal-200 bg-teal-50 px-4 py-3 text-sm font-medium text-teal-700">
           Order marked as packed.
         </div>
       ) : null}
 
-      {query?.problem ? (
+      {query?.problem === "existing" ? (
+        <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
+          An open problem already exists for this order.
+        </div>
+      ) : query?.problem ? (
         <div className="mb-5 rounded-md border border-amber-200 bg-amber-50 px-4 py-3 text-sm font-medium text-amber-800">
           Problem order created.
         </div>
@@ -72,18 +89,26 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
 
         <div className="space-y-5">
           <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
+            <div className="mb-4 rounded-md bg-slate-950 p-4 text-white">
+              <p className="text-xs font-semibold uppercase tracking-wide text-slate-300">Pack status</p>
+              <p className="mt-1 text-xl font-bold">{packingResultLabel(order)}</p>
+            </div>
             <dl className="grid gap-3 sm:grid-cols-2">
               <div className="rounded-md bg-slate-50 p-3">
                 <dt className="text-sm font-medium text-slate-500">SKU</dt>
-                <dd className="mt-1 break-words font-semibold text-slate-950">{order.sku}</dd>
+                <dd className="mt-1 break-words text-2xl font-bold text-slate-950">{order.sku}</dd>
               </div>
               <div className="rounded-md bg-slate-50 p-3">
                 <dt className="text-sm font-medium text-slate-500">Quantity</dt>
-                <dd className="mt-1 text-2xl font-bold text-berry">{order.qty}</dd>
+                <dd className="mt-1 text-4xl font-bold text-berry">{order.qty}</dd>
               </div>
               <div className="rounded-md bg-slate-50 p-3">
                 <dt className="text-sm font-medium text-slate-500">Color</dt>
                 <dd className="mt-1 font-semibold text-slate-950">{order.color ?? mapping?.color ?? "Unknown"}</dd>
+              </div>
+              <div className="rounded-md bg-slate-50 p-3">
+                <dt className="text-sm font-medium text-slate-500">Size</dt>
+                <dd className="mt-1 font-semibold text-slate-950">{order.size ?? "Unknown"}</dd>
               </div>
               <div className="rounded-md bg-slate-50 p-3">
                 <dt className="text-sm font-medium text-slate-500">Courier</dt>
@@ -96,6 +121,10 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
               <div className="rounded-md bg-slate-50 p-3">
                 <dt className="text-sm font-medium text-slate-500">Order number</dt>
                 <dd className="mt-1 break-words font-semibold text-slate-950">{order.orderNo}</dd>
+              </div>
+              <div className="rounded-md bg-slate-50 p-3">
+                <dt className="text-sm font-medium text-slate-500">AWB</dt>
+                <dd className="mt-1 break-words font-semibold text-slate-950">{order.awb}</dd>
               </div>
               <div className="rounded-md bg-slate-50 p-3">
                 <dt className="text-sm font-medium text-slate-500">Payment</dt>
@@ -119,7 +148,7 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
               </p>
               <div className="mt-4">
                 <SubmitButton pendingText="Confirming..." variant={canPack ? "primary" : "secondary"}>
-                  {canPack ? "Mark packed" : "Already handled"}
+                  {canPack ? "Confirm packed" : "Already packed"}
                 </SubmitButton>
               </div>
             </form>
@@ -160,7 +189,7 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
               {order.scanLogs.map((log) => (
                 <div key={log.id} className="px-4 py-3 text-sm">
                   <p className="font-semibold text-slate-950">
-                    {log.outcome} · {log.scannedBy?.name ?? "Unknown"}
+                    {log.outcome} - {log.scannedBy?.name ?? "Unknown"}
                   </p>
                   <p className="text-slate-500">{formatDateTime(log.createdAt)}</p>
                 </div>
@@ -174,8 +203,8 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
       </section>
 
       <div className="mt-5">
-        <Link href="/packing" className="text-sm font-semibold text-berry hover:text-pink-800">
-          Scan another AWB
+        <Link href="/packing" className="rounded-md bg-slate-950 px-4 py-3 text-sm font-semibold text-white shadow-sm transition hover:bg-slate-800">
+          Scan next AWB
         </Link>
       </div>
     </AppShell>
