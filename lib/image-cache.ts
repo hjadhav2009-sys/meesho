@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, createHmac, timingSafeEqual } from "node:crypto";
 import { existsSync } from "node:fs";
 import { mkdir, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import path from "node:path";
@@ -13,6 +13,7 @@ export const IMAGE_CACHE_MAX_SOURCE_BYTES = 8 * 1024 * 1024;
 export const IMAGE_CACHE_MARKETPLACE = "meesho";
 export const IMAGE_CACHE_CONFIRMATION = "DELETE IMAGE CACHE";
 export const ALLOWED_CACHED_IMAGE_FILE_NAMES = new Set(["card.webp", "card.jpg", "card.jpeg", "card.png", "card.avif"]);
+export const IMAGE_CACHE_SIGNED_URL_TTL_SECONDS = 12 * 60 * 60;
 
 export type ImageCacheStatus = "CACHED" | "BROKEN" | "NOT_CACHED" | "RECHECK_NEEDED";
 
@@ -59,6 +60,13 @@ export type ProductImageCacheRoutePath = {
   safeSku: string;
   fileName: string;
   relativePath: string;
+};
+
+export type SignedCachedImageVerificationInput = {
+  parsedPath: ProductImageCacheRoutePath;
+  token: string | null | undefined;
+  exp: string | number | null | undefined;
+  now?: Date;
 };
 
 type SharpFactory = (input: Buffer) => {
@@ -153,6 +161,70 @@ export function canUserAccessCachedImage(user: Pick<User, "role" | "accountId"> 
   return user.role === "OWNER" || user.accountId === accountId;
 }
 
+function imageCacheSecret() {
+  return process.env.IMAGE_CACHE_SECRET || process.env.SESSION_SECRET || "dev-only-change-me";
+}
+
+function signedImagePayload(input: { relativePath: string; accountId: string; exp: number }) {
+  return `${input.relativePath}|${input.accountId}|${input.exp}`;
+}
+
+export function signCachedImagePath(input: { relativePath: string; accountId: string; exp: number }) {
+  return createHmac("sha256", imageCacheSecret()).update(signedImagePayload(input)).digest("base64url");
+}
+
+function constantTimeTokenEqual(actual: string, expected: string) {
+  const actualBuffer = Buffer.from(actual);
+  const expectedBuffer = Buffer.from(expected);
+
+  return actualBuffer.length === expectedBuffer.length && timingSafeEqual(actualBuffer, expectedBuffer);
+}
+
+export function verifySignedCachedImageUrl(input: SignedCachedImageVerificationInput) {
+  const exp = typeof input.exp === "number" ? input.exp : Number(input.exp);
+
+  if (!input.token || !Number.isFinite(exp)) {
+    return false;
+  }
+
+  const nowSeconds = Math.floor((input.now?.getTime() ?? Date.now()) / 1000);
+
+  if (exp < nowSeconds) {
+    return false;
+  }
+
+  const expected = signCachedImagePath({
+    relativePath: input.parsedPath.relativePath,
+    accountId: input.parsedPath.accountId,
+    exp
+  });
+
+  return constantTimeTokenEqual(input.token, expected);
+}
+
+export function signedCachedProductImageUrl(input: {
+  relativePath: string;
+  accountId: string;
+  exp?: number;
+  now?: Date;
+}) {
+  const exp =
+    input.exp ??
+    Math.floor((input.now?.getTime() ?? Date.now()) / 1000) + IMAGE_CACHE_SIGNED_URL_TTL_SECONDS;
+  const token = signCachedImagePath({
+    relativePath: input.relativePath,
+    accountId: input.accountId,
+    exp
+  });
+  const segments = input.relativePath.replace(/\\/g, "/").split("/").filter(Boolean).map(encodeURIComponent);
+  const params = new URLSearchParams({
+    exp: String(exp),
+    token
+  });
+
+  return `/product-images/${segments.join("/")}?${params}`;
+}
+
 export async function readImageCacheMeta(input: { accountId: string; sku: string; root?: string; marketplace?: string }) {
   const metaPath = productImageCacheMetaPath(input);
 
@@ -185,9 +257,21 @@ export function cachedProductImageUrl(mapping: CacheableSkuImage) {
     return null;
   }
 
-  const versionSource = mapping.cacheCachedAt ? new Date(mapping.cacheCachedAt).getTime() : Date.now();
-  const segments = mapping.cacheFilePath.replace(/\\/g, "/").split("/").filter(Boolean).map(encodeURIComponent);
-  return `/product-images/${segments.join("/")}?v=${Number.isFinite(versionSource) ? versionSource : Date.now()}`;
+  const normalizedPath = mapping.cacheFilePath.replace(/\\/g, "/");
+  const parsedPath = parseProductImageCacheRoutePath(normalizedPath.split("/").filter(Boolean));
+
+  if (!parsedPath) {
+    return null;
+  }
+
+  if (mapping.accountId && parsedPath.accountId !== safeImageCacheSegment(mapping.accountId, "account")) {
+    return null;
+  }
+
+  return signedCachedProductImageUrl({
+    relativePath: parsedPath.relativePath,
+    accountId: parsedPath.accountId
+  });
 }
 
 export function imageCacheNeedsRefresh(mapping: CacheableSkuImage) {

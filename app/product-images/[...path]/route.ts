@@ -5,7 +5,8 @@ import {
   absoluteCachedImagePath,
   canUserAccessCachedImage,
   contentTypeForCachedImage,
-  parseProductImageCacheRoutePath
+  parseProductImageCacheRoutePath,
+  verifySignedCachedImageUrl
 } from "@/lib/image-cache";
 
 type ProductImageRouteContext = {
@@ -14,7 +15,7 @@ type ProductImageRouteContext = {
   }>;
 };
 
-export async function GET(_request: Request, context: ProductImageRouteContext) {
+export async function GET(request: Request, context: ProductImageRouteContext) {
   const params = await context.params;
   const parsedPath = parseProductImageCacheRoutePath(params.path);
 
@@ -22,14 +23,24 @@ export async function GET(_request: Request, context: ProductImageRouteContext) 
     return NextResponse.json({ error: "Image not found" }, { status: 404 });
   }
 
-  const user = await getCurrentUser();
+  const url = new URL(request.url);
+  const token = url.searchParams.get("token");
+  const exp = url.searchParams.get("exp");
 
-  if (!user) {
-    return NextResponse.json({ error: "Authentication required" }, { status: 401 });
-  }
+  if (token || exp) {
+    if (!verifySignedCachedImageUrl({ parsedPath, token, exp })) {
+      return NextResponse.json({ error: "Invalid image token" }, { status: 403 });
+    }
+  } else {
+    const user = await getCurrentUser();
 
-  if (!canUserAccessCachedImage(user, parsedPath.accountId)) {
-    return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    if (!user) {
+      return NextResponse.json({ error: "Authentication required" }, { status: 401 });
+    }
+
+    if (!canUserAccessCachedImage(user, parsedPath.accountId)) {
+      return NextResponse.json({ error: "Forbidden" }, { status: 403 });
+    }
   }
 
   const filePath = absoluteCachedImagePath(parsedPath.relativePath);

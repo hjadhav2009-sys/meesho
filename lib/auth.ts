@@ -217,6 +217,7 @@ export async function getSelectedAccount(user?: User | null) {
   return prisma.account.findFirst({
     where: {
       id: selectedAccountId,
+      active: currentUser.role === "OWNER" ? undefined : true,
       users: currentUser.role === "OWNER" ? undefined : { some: { id: currentUser.id } }
     }
   });
@@ -235,12 +236,13 @@ export async function requireAccount(user?: User | null) {
 export async function getAvailableAccounts(user: User) {
   if (user.role === "OWNER") {
     return prisma.account.findMany({
-      orderBy: { name: "asc" }
+      orderBy: [{ active: "desc" }, { name: "asc" }]
     });
   }
 
   return prisma.account.findMany({
     where: {
+      active: true,
       users: {
         some: { id: user.id }
       }

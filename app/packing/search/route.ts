@@ -20,7 +20,7 @@ export async function GET(request: Request) {
     results: results.map((order) => ({
       awb: order.awb,
       sku: order.sku,
-      imageUrl: order.imageUrl,
+      cachedImageUrl: order.cachedImageUrl,
       cacheStatus: order.cacheStatus,
       color: order.color,
       qty: order.qty,

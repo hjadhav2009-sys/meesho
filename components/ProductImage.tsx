@@ -62,7 +62,7 @@ export function ProductImage({
   }, [cacheStatus, imageHealth, mappingId, src, validSrc]);
 
   useEffect(() => {
-    if (!validSrc || state !== "loading") {
+    if (!validSrc || state !== "loading" || !isExternalSrc) {
       setSlowLoading(false);
       return;
     }
@@ -72,7 +72,7 @@ export function ProductImage({
     }, 5000);
 
     return () => window.clearTimeout(timeout);
-  }, [retryVersion, state, validSrc]);
+  }, [isExternalSrc, retryVersion, state, validSrc]);
 
   function stopParentNavigation(event: MouseEvent<HTMLButtonElement>) {
     event.preventDefault();
@@ -137,9 +137,9 @@ export function ProductImage({
       ) : (
         <div className="flex h-full w-full flex-col items-center justify-center px-3 text-center">
           <span className="text-xs font-semibold uppercase tracking-wide text-slate-400">
-            {state === "broken" ? "Check URL" : "No image"}
+            {state === "broken" ? "Image URL failed" : stateText}
           </span>
-          <span className="mt-1 text-xs text-slate-500">{stateText}</span>
+          <span className="mt-1 text-xs text-slate-500">{state === "missing" ? "Prepare images from owner upload review" : stateText}</span>
           {showDebug && state === "broken" && validSrc && isExternalSrc ? (
             <button
               type="button"
@@ -156,7 +156,7 @@ export function ProductImage({
           ) : null}
         </div>
       )}
-      {state === "loading" && slowLoading ? (
+      {state === "loading" && slowLoading && isExternalSrc ? (
         <div className="absolute inset-x-2 bottom-2 rounded bg-white/90 px-2 py-1 text-center text-xs font-semibold text-amber-800">
           External image slow
         </div>

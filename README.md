@@ -333,6 +333,10 @@ and deactivate worker users from **Owner -> Users** if an unknown phone or brows
 Owners can create picker/packer users, assign an account, edit names/usernames/roles, reset passwords, reactivate users,
 deactivate users, and close sessions for unknown devices. Workers can change their own password from the app header.
 
+Owners can add and maintain Meesho seller accounts from **Owner -> Accounts**. Uploads, SKU mappings, image cache paths,
+orders, AWB search, reports, and worker access are all scoped by account. The same SKU or AWB can be used by different
+accounts without sharing data because operational keys include `accountId`.
+
 Optional local network protection:
 
 ```env
@@ -540,8 +544,11 @@ local card file and serves it with the correct content type.
 
 The cache is not committed to GitHub. `storage/product-images/` is ignored by `.gitignore`.
 
-Worker picker and packing cards use cached local images only. They do not load slow external Meesho URLs. If an image is
-not prepared or the URL failed, the card still opens and packing can still be confirmed.
+Worker picker and packing cards use signed local cached image URLs only. These URLs are generated while rendering the
+account-scoped page, expire automatically, and let the image route serve local files without a database/session lookup on
+every image request. The signature uses `IMAGE_CACHE_SECRET` when set, otherwise `SESSION_SECRET`. Workers do not load
+slow external Meesho URLs by default. If an image is not prepared or the URL failed, the card still opens and packing can
+still be confirmed.
 
 Storage estimate: 600x600 card images are usually small. 10,000 cached images commonly fit within a few GB depending on
 source format and conversion availability. The optional cache target is 5000 MB, and old unused cache files can be

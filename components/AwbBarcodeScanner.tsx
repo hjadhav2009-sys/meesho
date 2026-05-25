@@ -18,7 +18,7 @@ type BarcodeResult = {
 type AwbSuggestion = {
   awb: string;
   sku: string;
-  imageUrl?: string | null;
+  cachedImageUrl?: string | null;
   cacheStatus?: string | null;
   color?: string | null;
   qty: number;
@@ -303,7 +303,7 @@ export function AwbBarcodeScanner({ action, defaultAwb }: AwbBarcodeScannerProps
                       className="grid grid-cols-[4rem_1fr] gap-3 rounded-md border border-slate-200 bg-white p-3 shadow-sm transition hover:border-berry hover:bg-slate-50 sm:grid-cols-[auto_1fr_auto]"
                     >
                       <ProductImage
-                        src={suggestion.imageUrl}
+                        src={suggestion.cachedImageUrl}
                         alt={`${suggestion.sku} ${suggestion.awb}`}
                         size="sm"
                         showBadge={false}
