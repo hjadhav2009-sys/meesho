@@ -37,7 +37,7 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
   const canPack = order.packStatus === "READY";
   const canReportProblem = order.packStatus === "READY";
   const openProblem = order.problemOrders[0];
-  const imageUrl = mapping?.imageUrl ?? order.imageUrl;
+  const imageUrl = mapping?.cachedImageUrl ?? null;
 
   return (
     <AppShell>
@@ -86,6 +86,8 @@ export default async function ScanResultPage({ params, searchParams }: ScanResul
             mappingId={mapping?.id}
             showDebug={user.role === "OWNER"}
             imageHealth={mapping?.imageHealth}
+            cacheStatus={mapping?.cacheStatus}
+            originalImageUrl={mapping?.imageUrl}
           />
           <div className="p-4">
             <p className="line-clamp-2 text-base font-semibold text-slate-700">

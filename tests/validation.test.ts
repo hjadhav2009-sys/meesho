@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
-import { existsSync, readFileSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { AwbBarcodeScanner } from "../components/AwbBarcodeScanner";
@@ -14,7 +15,17 @@ import {
 } from "../lib/auth-helpers";
 import { canAccessAccount, canRoleAccessPath } from "../lib/authz";
 import { formatCsvValue, rowsToCsv } from "../lib/csv";
-import { planOrderImport } from "../lib/import/orders";
+import { buildSkuMetadataAutoFillUpdates, planOrderImport } from "../lib/import/orders";
+import {
+  cachedProductImageUrl,
+  findImageCacheCleanupCandidates,
+  imageCacheNeedsRefresh,
+  productImageCacheDir,
+  productImageCacheRelativeDir,
+  readImageCacheMeta,
+  safeImageCacheSegment,
+  writeImageCacheMeta
+} from "../lib/image-cache";
 import { canImportPreviewIssues, isOrderPreviewSourceType, reviewProblemIssues } from "../lib/import/preview";
 import { planAccountSkuMappingImport, planSkuMappingImport, type RawImportRow } from "../lib/import/sku-mappings";
 import { isAllowedLocalNetworkIp, isIpInCidr, normalizeIp } from "../lib/network";
@@ -186,19 +197,11 @@ const skuPlan = planSkuMappingImport(
   [
     {
       sku: "EXISTING_CHANGED",
-      imageUrl: "https://images-r.meesho.com/images/products/2/old.avif",
-      productName: null,
-      color: null,
-      notes: null,
-      active: true
+      imageUrl: "https://images-r.meesho.com/images/products/2/old.avif"
     },
     {
       sku: "EXISTING_SAME",
-      imageUrl: "https://images-r.meesho.com/images/products/3/same.avif",
-      productName: null,
-      color: null,
-      notes: null,
-      active: true
+      imageUrl: "https://images-r.meesho.com/images/products/3/same.avif"
     }
   ],
   skuImportRows
@@ -213,11 +216,7 @@ const minimalSkuPlan = planSkuMappingImport(
   [
     {
       sku: "KEEP_METADATA",
-      imageUrl: "https://images-r.meesho.com/images/products/4/same.avif",
-      productName: "Existing name",
-      color: "Blue",
-      notes: "Existing note",
-      active: false
+      imageUrl: "https://images-r.meesho.com/images/products/4/same.avif"
     }
   ],
   [{ sku: "KEEP_METADATA", image_url: "https://images-r.meesho.com/images/products/4/same.avif" }]
@@ -229,20 +228,12 @@ const accountWisePlan = planAccountSkuMappingImport(
     {
       accountId: "a1",
       sku: "SHARED_SKU",
-      imageUrl: "https://images-r.meesho.com/images/products/a1/old.avif",
-      productName: "Old A1",
-      color: "Silver",
-      notes: null,
-      active: true
+      imageUrl: "https://images-r.meesho.com/images/products/a1/old.avif"
     },
     {
       accountId: "a2",
       sku: "SHARED_SKU",
-      imageUrl: "https://images-r.meesho.com/images/products/a2/same.avif",
-      productName: "Same A2",
-      color: "Gold",
-      notes: "keep",
-      active: true
+      imageUrl: "https://images-r.meesho.com/images/products/a2/same.avif"
     }
   ],
   [
@@ -332,6 +323,30 @@ assert.equal(orderPlan.missingImageRows.length, 0, "Mapped SKUs are not marked a
 const missingImagePlan = planOrderImport([], [{ awb: "NO_IMAGE", sku: "UNMAPPED", qty: 1, orderNo: "ORDER5" }], new Set());
 assert.equal(missingImagePlan.created.length, 1, "Missing image rows still import as orders");
 assert.equal(missingImagePlan.missingImageRows.length, 1, "Missing image rows are counted for review");
+const metadataAutoFill = buildSkuMetadataAutoFillUpdates(
+  [
+    { id: "m1", sku: "SKU_META_EMPTY", productName: null, color: null, size: null },
+    { id: "m2", sku: "SKU_META_OWNER", productName: "Owner name", color: "Owner color", size: "Owner size" }
+  ],
+  [
+    {
+      sku: "SKU_META_EMPTY",
+      productDescription: "Parsed product name",
+      color: "Parsed color",
+      size: "Parsed size"
+    },
+    {
+      sku: "SKU_META_OWNER",
+      productDescription: "Should not overwrite",
+      color: "Should not overwrite",
+      size: "Should not overwrite"
+    }
+  ]
+);
+assert.equal(metadataAutoFill.find((update) => update.id === "m1")?.productName, "Parsed product name", "Product name auto-fills when empty");
+assert.equal(metadataAutoFill.find((update) => update.id === "m1")?.color, "Parsed color", "Color auto-fills when empty");
+assert.equal(metadataAutoFill.find((update) => update.id === "m1")?.size, "Parsed size", "Size auto-fills when empty");
+assert.equal(metadataAutoFill.some((update) => update.id === "m2"), false, "Owner-filled metadata is not overwritten");
 assert.equal(canImportPreviewIssues([{ issueType: "LOW_CONFIDENCE" }]), false, "Low confidence preview rows do not import by default");
 assert.equal(canImportPreviewIssues([{ issueType: "MISSING_IMAGE_MAPPING" }]), true, "Missing image mapping does not block preview import");
 assert.equal(isOrderPreviewSourceType("PICKLIST_SUMMARY"), false, "Picklist summary rows are not order preview rows");
@@ -378,13 +393,22 @@ const pickerGroups = buildPickerSkuGroups(
       packStatus: "READY"
     }
   ],
-  [{ id: "m1", sku: "SKU1", imageUrl: "https://example.com/image.jpg", productName: "Pendant" }]
+  [
+    {
+      id: "m1",
+      sku: "SKU1",
+      imageUrl: "https://example.com/image.jpg",
+      cachedImageUrl: "/product-images/meesho/a1/SKU1/card.webp",
+      productName: "Pendant",
+      cacheStatus: "CACHED"
+    }
+  ]
 );
 
 assert.equal(pickerGroups.length, 2, "Picker grouping separates SKU by color and size");
 assert.equal(pickerGroups.find((group) => group.color === "Silver")?.totalQuantity, 1, "Picker group sums quantity");
 assert.equal(pickerGroups.find((group) => group.color === "Gold")?.status, "PICKED", "Picked group status is derived");
-assert.equal(pickerGroups[0]?.imageUrl, "https://example.com/image.jpg", "Picker group uses mapping image when order image is null");
+assert.equal(pickerGroups[0]?.imageUrl, "/product-images/meesho/a1/SKU1/card.webp", "Picker group uses cached image URL first");
 assert.equal(paginatePickerSkuGroups(pickerGroups, { limit: 1 }).groups.length, 1, "Picker pagination limits first render");
 assert.equal(paginatePickerSkuGroups(pickerGroups, { limit: 1 }).hasMore, true, "Picker pagination exposes load-more state");
 assert.equal(paginatePickerSkuGroups(pickerGroups, { limit: 1, page: 2 }).groups.length, 2, "Picker load-more keeps previous groups visible");
@@ -407,9 +431,18 @@ const pickerGroupsWithOrderImage = buildPickerSkuGroups(
       packStatus: "READY"
     }
   ],
-  [{ id: "m2", sku: "SKU2", imageUrl: "https://example.com/current-mapping-image.jpg", productName: "Current mapped product" }]
+  [
+    {
+      id: "m2",
+      sku: "SKU2",
+      imageUrl: "https://example.com/current-mapping-image.jpg",
+      cachedImageUrl: "/product-images/meesho/a1/SKU2/card.webp",
+      productName: "Current mapped product",
+      cacheStatus: "CACHED"
+    }
+  ]
 );
-assert.equal(pickerGroupsWithOrderImage[0]?.imageUrl, "https://example.com/current-mapping-image.jpg", "Picker group prefers current mapping image when available");
+assert.equal(pickerGroupsWithOrderImage[0]?.imageUrl, "/product-images/meesho/a1/SKU2/card.webp", "Picker group does not fall back to slow order image when cached image exists");
 assert.equal(normalizeSkuForMatching("SUL - PN - BC _ SS"), "SUL-PN-BC_SS", "SKU normalization removes spaces around hyphen and underscore");
 
 assert.equal(validateWorkerPassword("demo1234").valid, false, "Demo password is rejected");
@@ -438,10 +471,82 @@ assert.equal(productImageStateText("broken", true), "Image URL failed", "Product
 assert.equal(picklistSummaryProductNameLabel({ imageUrl: "https://example.com/image.jpg", imageHealth: "MAPPED", productName: null }), "Mapped image, no product name", "Picklist summary shows mapped SKU without product name");
 assert.equal(picklistSummaryProductNameLabel(null), "No mapping", "Picklist summary shows no mapping separately");
 assert.equal(imageHealthLabel({ imageUrl: "https://example.com/image.jpg", imageHealth: "BROKEN" }), "Broken image URL", "Broken image health label is clear");
+assert.equal(normalizeSkuMappingImageFilter("cached"), "cached", "SKU mapping image filter accepts cached");
+assert.equal(normalizeSkuMappingImageFilter("mapped"), "cached", "Old mapped filter aliases to cached");
 assert.equal(normalizeSkuMappingImageFilter("broken"), "broken", "SKU mapping image filter accepts broken");
 assert.equal(normalizeSkuMappingImageFilter("surprise"), "all", "SKU mapping image filter falls back to all");
-assert.equal(skuMappingMatchesImageFilter({ imageUrl: "https://example.com/image.jpg", imageHealth: "BROKEN" }, "broken"), true, "SKU mapping helper matches broken mappings");
-assert.equal(skuMappingMatchesImageFilter({ imageUrl: "", imageHealth: "UNKNOWN" }, "missing"), true, "SKU mapping helper matches missing URLs");
+assert.equal(skuMappingMatchesImageFilter({ imageUrl: "https://example.com/image.jpg", cacheStatus: "BROKEN" }, "broken"), true, "SKU mapping helper matches broken cache mappings");
+assert.equal(skuMappingMatchesImageFilter({ imageUrl: "https://example.com/image.jpg", cacheStatus: "NOT_CACHED" }, "not-cached"), true, "SKU mapping helper matches not-cached mappings");
+assert.equal(safeImageCacheSegment("SKU 1/2"), "SKU_1_2", "Image cache segment removes path separators");
+assert.equal(productImageCacheRelativeDir({ accountId: "account/1", sku: "SKU 1/2" }), "meesho/account_1/SKU_1_2", "Account and SKU cache path is deterministic");
+assert.equal(
+  cachedProductImageUrl({
+    accountId: "a1",
+    sku: "SKU1",
+    imageUrl: "https://example.com/image.jpg",
+    cacheStatus: "CACHED",
+    cacheFilePath: "meesho/a1/SKU1/card.webp",
+    cacheOriginalImageUrl: "https://example.com/image.jpg",
+    cacheCachedAt: new Date("2026-05-25T00:00:00.000Z")
+  })?.startsWith("/product-images/meesho/a1/SKU1/card.webp?v="),
+  true,
+  "Cached image URL serves local product image route"
+);
+assert.equal(
+  cachedProductImageUrl({
+    accountId: "a1",
+    sku: "SKU1",
+    imageUrl: "https://example.com/new.jpg",
+    cacheStatus: "CACHED",
+    cacheFilePath: "meesho/a1/SKU1/card.webp",
+    cacheOriginalImageUrl: "https://example.com/old.jpg"
+  }),
+  null,
+  "Stale cached image URL is not served"
+);
+assert.equal(
+  imageCacheNeedsRefresh({
+    accountId: "a1",
+    sku: "SKU1",
+    imageUrl: "https://example.com/new.jpg",
+    cacheStatus: "CACHED",
+    cacheFilePath: "meesho/a1/SKU1/card.webp",
+    cacheOriginalImageUrl: "https://example.com/old.jpg"
+  }),
+  true,
+  "Changed image URL needs cache refresh"
+);
+const imageCacheTestRoot = mkdtempSync(join(tmpdir(), "meesho-image-cache-"));
+try {
+  await writeImageCacheMeta({
+    root: imageCacheTestRoot,
+    accountId: "a1",
+    sku: "SKU1",
+    meta: {
+      marketplace: "meesho",
+      accountId: "a1",
+      sku: "SKU1",
+      originalImageUrl: "https://example.com/image.jpg",
+      cachedAt: "2026-04-01T00:00:00.000Z",
+      lastUsedAt: "2026-04-01T00:00:00.000Z",
+      width: 600,
+      height: 600,
+      fileSizeBytes: 4,
+      status: "CACHED",
+      contentType: "image/jpeg",
+      fileName: "card.jpg",
+      filePath: "meesho/a1/SKU1/card.jpg"
+    }
+  });
+  mkdirSync(productImageCacheDir({ root: imageCacheTestRoot, accountId: "a1", sku: "SKU1" }), { recursive: true });
+  writeFileSync(join(productImageCacheDir({ root: imageCacheTestRoot, accountId: "a1", sku: "SKU1" }), "card.jpg"), "test");
+  const meta = await readImageCacheMeta({ root: imageCacheTestRoot, accountId: "a1", sku: "SKU1" });
+  const cleanupCandidates = await findImageCacheCleanupCandidates(imageCacheTestRoot, new Date("2026-05-25T00:00:00.000Z"));
+  assert.equal(meta?.status, "CACHED", "Image cache metadata read/write works");
+  assert.equal(cleanupCandidates.length, 1, "Image cache retention selects files unused for 30+ days");
+} finally {
+  rmSync(imageCacheTestRoot, { recursive: true, force: true });
+}
 assert.equal(typeof AwbBarcodeScanner, "function", "Scanner component compiles");
 
 assert.equal(formatCsvValue('A "quoted", value'), '"A ""quoted"", value"', "CSV values are safely escaped");
@@ -492,11 +597,13 @@ const readme = readFileSync(join(repoRoot, "README.md"), "utf8");
 const buildScript = readFileSync(join(repoRoot, "scripts", "build.mjs"), "utf8");
 const pdfExtractor = readFileSync(join(repoRoot, "lib", "pdf", "extract-pages.ts"), "utf8");
 const productImageComponent = readFileSync(join(repoRoot, "components", "ProductImage.tsx"), "utf8");
+const awbScannerComponent = readFileSync(join(repoRoot, "components", "AwbBarcodeScanner.tsx"), "utf8");
 const pickerPage = readFileSync(join(repoRoot, "app", "picker", "page.tsx"), "utf8");
 const pickerDetailPage = readFileSync(join(repoRoot, "app", "picker", "[sku]", "page.tsx"), "utf8");
 const packingPage = readFileSync(join(repoRoot, "app", "packing", "page.tsx"), "utf8");
 const packingResultPage = readFileSync(join(repoRoot, "app", "packing", "[awb]", "page.tsx"), "utf8");
 const reviewPage = readFileSync(join(repoRoot, "app", "owner", "uploads", "[batchId]", "review", "page.tsx"), "utf8");
+const skuExportRoute = readFileSync(join(repoRoot, "app", "owner", "sku-mappings", "export", "route.ts"), "utf8");
 const changePasswordAction = readFileSync(join(repoRoot, "app", "change-password", "actions.ts"), "utf8");
 const ownerSystemPage = readFileSync(join(repoRoot, "app", "owner", "system", "page.tsx"), "utf8");
 const windowsProdPs1 = readFileSync(join(repoRoot, "scripts", "windows", "start-local-prod.ps1"), "utf8");
@@ -516,6 +623,8 @@ assert.match(readme, /Vercel is [\s\S]*not recommended here for heavy PDF parsin
 assert.match(readme, /SQLite requires a `file:` URL/, "README documents the Prisma provider mismatch rebuild fix");
 assert.match(readme, /SESSION_COOKIE_SECURE=false/, "README documents local HTTP cookie mode");
 assert.match(readme, /Meesho image URLs are external/, "README documents external image URL reliability");
+assert.match(readme, /You only need SKU \+ image URL/, "README documents simple SKU image import");
+assert.match(readme, /storage\/product-images\/meesho\/<accountId>\/<safeSku>/, "README documents local image cache storage");
 assert.equal(buildScript.indexOf('import "dotenv/config";') < buildScript.indexOf("process.env.DATABASE_URL"), true, "Build loads .env before choosing Prisma schema");
 assert.equal(pdfExtractor.includes(".next/server/chunks/pdf.worker.mjs"), false, "PDF extraction does not reference Next server worker chunks");
 assert.match(pdfExtractor, /pdfjs-dist\/legacy\/build\/pdf\.worker\.mjs/, "PDF extraction preloads the PDF.js worker module explicitly");
@@ -524,11 +633,18 @@ assert.match(pickerPage, /Large images/, "Picker page keeps a large-image mobile
 assert.match(pickerPage, /Load more/, "Picker page supports load-more pagination");
 assert.match(pickerPage, /Compact/, "Picker page supports compact mode");
 assert.match(pickerPage, /sticky top-\[88px\]/, "Picker filters stay reachable on mobile");
+assert.match(pickerPage, /cacheStatus={group.mapping\?\.cacheStatus}/, "Picker card passes cache status to image component");
 assert.match(pickerDetailPage, /fixed inset-x-0 bottom-0/, "Picker detail has mobile sticky bottom actions");
+assert.match(pickerDetailPage, /mapping\?\.cachedImageUrl/, "Picker detail uses cached image URL first");
 assert.match(packingPage, /<AwbBarcodeScanner[\s\S]*Selected account/, "Packing page places the scanner before lower-priority dashboard details");
 assert.match(packingResultPage, /Quantity to pack/, "Packing result makes quantity prominent on mobile");
 assert.match(packingResultPage, /fixed inset-x-0 bottom-0/, "Packing result has mobile sticky confirm actions");
+assert.match(packingResultPage, /mapping\?\.cachedImageUrl/, "Packing card uses cached image URL first");
 assert.match(reviewPage, /<details[\s\S]*Picklist SKU summary rows/, "Upload review makes picklist summary rows collapsible");
+assert.match(reviewPage, /Prepare today&apos;s product images/, "Upload review exposes daily image cache preparation");
+assert.match(awbScannerComponent, /cacheStatus={suggestion.cacheStatus}/, "Manual AWB suggestions pass cached image status");
+assert.match(skuExportRoute, /cache_status/, "Full SKU export includes cache status");
+assert.match(skuExportRoute, /product_name[\s\S]*color[\s\S]*size/, "Full SKU export includes auto-filled metadata");
 assert.match(productImageComponent, /decoding="async"/, "Product images decode asynchronously");
 assert.match(productImageComponent, /Check this image/, "Owner image diagnostics include a manual client recheck button");
 assert.match(productImageComponent, /imageHealth === "BROKEN" \|\| manualCheck/, "Successful image loads only update health when repairing or manually checking a mapping");
@@ -540,7 +656,10 @@ assert.match(localProdEnvExample, /SESSION_COOKIE_SECURE=false/, "Local producti
 assert.match(prodEnvExample, /SESSION_COOKIE_SECURE=true/, "Production env example uses secure cookies for HTTPS");
 assert.match(sqliteSchema, /@@unique\(\[accountId, sku\]\)/, "SQLite schema keeps SKU mappings unique by account and SKU");
 assert.match(postgresSchema, /@@unique\(\[accountId, sku\]\)/, "PostgreSQL schema keeps SKU mappings unique by account and SKU");
+assert.match(sqliteSchema, /cacheStatus\s+ImageCacheStatus/, "SQLite schema stores cache status metadata");
+assert.match(postgresSchema, /cacheStatus\s+ImageCacheStatus/, "PostgreSQL schema stores cache status metadata");
 assert.match(gitignore, /\*\.pdf/, "Git ignores real PDF files");
+assert.match(gitignore, /storage\/product-images\//, "Git ignores local product image cache");
 assert.equal(existsSync(join(repoRoot, "scripts", "windows", "start-local-prod.ps1")), true, "Windows production PowerShell script exists");
 assert.equal(existsSync(join(repoRoot, "scripts", "windows", "start-local-prod.bat")), true, "Windows production batch script exists");
 assert.equal(existsSync(join(repoRoot, "docs", "cloudflare-tunnel", "config.yml.example")), true, "Cloudflare Tunnel config example exists");

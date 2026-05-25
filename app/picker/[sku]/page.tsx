@@ -37,9 +37,9 @@ export default async function PickerSkuDetailPage({ params, searchParams }: Pick
   }
 
   const firstOrder = detail.orders[0];
-  const imageUrl = detail.mapping?.imageUrl ?? firstOrder?.imageUrl;
+  const imageUrl = detail.mapping?.cachedImageUrl ?? null;
   const groupColor = firstOrder?.color ?? detail.mapping?.color ?? null;
-  const groupSize = firstOrder?.size ?? null;
+  const groupSize = firstOrder?.size ?? detail.mapping?.size ?? null;
   const hiddenColor = query?.color ?? encodePickerDimension(groupColor);
   const hiddenSize = query?.size ?? encodePickerDimension(groupSize);
   const courierEntries = Object.entries(detail.courierCounts);
@@ -95,6 +95,8 @@ export default async function PickerSkuDetailPage({ params, searchParams }: Pick
               mappingId={detail.mapping?.id}
               showDebug={user.role === "OWNER"}
               imageHealth={detail.mapping?.imageHealth}
+              cacheStatus={detail.mapping?.cacheStatus}
+              originalImageUrl={detail.mapping?.imageUrl}
             />
             <div className="p-4">
               <h2 className="break-words text-3xl font-black leading-tight text-slate-950">{sku}</h2>
