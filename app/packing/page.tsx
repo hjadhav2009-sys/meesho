@@ -1,11 +1,8 @@
-import Link from "next/link";
 import { AppShell } from "@/components/AppShell";
 import { AwbBarcodeScanner } from "@/components/AwbBarcodeScanner";
 import { PageHeader } from "@/components/PageHeader";
-import { StatusBadge } from "@/components/StatusBadge";
 import { requireAccount, requireUser } from "@/lib/auth";
 import { getPackingDashboard } from "@/lib/data";
-import { formatDateTime } from "@/lib/format";
 import { searchAwbAction } from "./actions";
 
 type PackingPageProps = {
@@ -28,30 +25,24 @@ export default async function PackingAwbPage({ searchParams }: PackingPageProps)
       <PageHeader
         eyebrow="Packer"
         title="Scan or search AWB"
-        description="Scan the shipping label barcode or type the AWB."
+        description="Scan the label or type the last 5 to 8 AWB characters."
       />
 
       <AwbBarcodeScanner action={searchAwbAction} defaultAwb={params?.q} />
 
-      <section className="mt-5 grid gap-3 sm:grid-cols-3">
-        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected account</p>
-          <p className="mt-1 text-lg font-bold text-slate-950">{account.name}</p>
-        </div>
-        <div className="rounded-md border border-slate-200 bg-white p-4 shadow-sm">
-          <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Packer</p>
-          <p className="mt-1 text-lg font-bold text-slate-950">{user.name}</p>
-        </div>
-        <div className="grid grid-cols-2 gap-3">
-          <div className="rounded-md border border-slate-200 bg-white p-4 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Packed today</p>
-            <p className="mt-1 text-2xl font-bold text-mint">{dashboard.packedTodayCount}</p>
-          </div>
-          <div className="rounded-md border border-slate-200 bg-white p-4 text-center shadow-sm">
-            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Pending</p>
-            <p className="mt-1 text-2xl font-bold text-berry">{dashboard.pendingCount}</p>
-          </div>
-        </div>
+      <section className="mt-4 flex gap-2 overflow-x-auto pb-1">
+        <span className="whitespace-nowrap rounded-full bg-white px-3 py-2 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+          {account.name}
+        </span>
+        <span className="whitespace-nowrap rounded-full bg-white px-3 py-2 text-sm font-semibold text-slate-700 ring-1 ring-slate-200">
+          {user.name}
+        </span>
+        <span className="whitespace-nowrap rounded-full bg-white px-3 py-2 text-sm font-semibold text-teal-700 ring-1 ring-teal-200">
+          Packed today {dashboard.packedTodayCount}
+        </span>
+        <span className="whitespace-nowrap rounded-full bg-white px-3 py-2 text-sm font-semibold text-berry ring-1 ring-pink-200">
+          Pending {dashboard.pendingCount}
+        </span>
       </section>
 
       {params?.error ? (
@@ -78,34 +69,6 @@ export default async function PackingAwbPage({ searchParams }: PackingPageProps)
         </div>
       ) : null}
 
-      <details className="mt-5 rounded-md border border-slate-200 bg-white shadow-sm">
-        <summary className="cursor-pointer border-b border-slate-200 px-4 py-3 font-semibold text-slate-950">
-          Recent scans
-        </summary>
-        <div className="divide-y divide-slate-100">
-          {dashboard.recentScans.map((scan) => (
-            <div key={scan.id} className="grid gap-2 px-4 py-3 text-sm sm:grid-cols-[1fr_auto] sm:items-center">
-              <div>
-                <p className="break-all text-base font-bold text-slate-950">AWB {scan.awb}</p>
-                <p className="text-slate-500">
-                  {scan.scannedBy?.name ?? "Unknown"} / {formatDateTime(scan.createdAt)}
-                </p>
-              </div>
-              <div className="flex items-center gap-3">
-                <StatusBadge value={scan.outcome} />
-                {scan.order ? (
-                  <Link href={`/packing/${encodeURIComponent(scan.order.awb)}`} className="font-semibold text-berry hover:text-pink-800">
-                    Open
-                  </Link>
-                ) : null}
-              </div>
-            </div>
-          ))}
-          {dashboard.recentScans.length === 0 ? (
-            <div className="px-4 py-6 text-center text-sm text-slate-500">No recent scans yet.</div>
-          ) : null}
-        </div>
-      </details>
     </AppShell>
   );
 }

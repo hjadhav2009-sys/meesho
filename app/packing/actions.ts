@@ -2,9 +2,20 @@
 
 import { redirect } from "next/navigation";
 import { requireAccount, requireUser } from "@/lib/auth";
-import { normalizeAwb, isValidAwb } from "@/lib/awb";
-import { getOrderByAwb, searchOrdersByAwbFragment } from "@/lib/data";
+import { normalizeAwb } from "@/lib/awb";
+import { searchOrdersByAwbFragment } from "@/lib/data";
 import { prisma } from "@/lib/prisma";
+
+function writeScanLogLater(input: {
+  accountId: string;
+  orderId?: string;
+  awb: string;
+  outcome: "FOUND" | "NOT_FOUND";
+  scannedById: string;
+  note: string;
+}) {
+  void prisma.scanLog.create({ data: input }).catch(() => undefined);
+}
 
 export async function searchAwbAction(formData: FormData) {
   const user = await requireUser(["OWNER", "PACKER"]);
@@ -15,44 +26,37 @@ export async function searchAwbAction(formData: FormData) {
     redirect("/packing?error=invalid");
   }
 
-  const order = isValidAwb(query)
-    ? await getOrderByAwb(account, query)
-    : null;
-  const matches = order ? [order] : await searchOrdersByAwbFragment(account.id, query, 10);
+  const matches = await searchOrdersByAwbFragment(account.id, query, 10);
 
-  if (!order && matches.length !== 1) {
+  if (matches.length !== 1) {
     if (matches.length > 1) {
       redirect(`/packing?q=${encodeURIComponent(query)}&multiple=1`);
     }
 
-    await prisma.scanLog.create({
-      data: {
-        accountId: account.id,
-        awb: query,
-        outcome: "NOT_FOUND",
-        scannedById: user.id,
-        note: "AWB lookup did not match an order."
-      }
+    writeScanLogLater({
+      accountId: account.id,
+      awb: query,
+      outcome: "NOT_FOUND",
+      scannedById: user.id,
+      note: "AWB lookup did not match an order."
     });
 
     redirect(`/packing?notFound=${encodeURIComponent(query)}`);
   }
 
-  const matchedOrder = order ?? matches[0];
+  const matchedOrder = matches[0];
 
   if (!matchedOrder) {
     redirect(`/packing?notFound=${encodeURIComponent(query)}`);
   }
 
-  await prisma.scanLog.create({
-    data: {
-      accountId: account.id,
-      orderId: matchedOrder.id,
-      awb: matchedOrder.awb,
-      outcome: "FOUND",
-      scannedById: user.id,
-      note: query === matchedOrder.awb ? "AWB lookup matched an order." : `Partial AWB lookup "${query}" matched an order.`
-    }
+  writeScanLogLater({
+    accountId: account.id,
+    orderId: matchedOrder.id,
+    awb: matchedOrder.awb,
+    outcome: "FOUND",
+    scannedById: user.id,
+    note: query === matchedOrder.awb ? "AWB lookup matched an order." : `Partial AWB lookup "${query}" matched an order.`
   });
 
   redirect(`/packing/${encodeURIComponent(matchedOrder.awb)}`);

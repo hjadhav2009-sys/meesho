@@ -247,7 +247,7 @@ export async function getPackingDashboard(accountId: string) {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
 
-  const [pendingCount, packedTodayCount, recentScans] = await withDevTiming("packing dashboard", () => Promise.all([
+  const [pendingCount, packedTodayCount] = await withDevTiming("packing dashboard", () => Promise.all([
     prisma.order.count({
       where: {
         accountId,
@@ -262,34 +262,12 @@ export async function getPackingDashboard(accountId: string) {
           gte: startOfDay
         }
       }
-    }),
-    prisma.scanLog.findMany({
-      where: { accountId },
-      select: {
-        id: true,
-        awb: true,
-        outcome: true,
-        createdAt: true,
-        order: {
-          select: {
-            awb: true
-          }
-        },
-        scannedBy: {
-          select: {
-            name: true
-          }
-        }
-      },
-      orderBy: { createdAt: "desc" },
-      take: 10
     })
-  ]));
+  ]), 500);
 
   return {
     pendingCount,
-    packedTodayCount,
-    recentScans
+    packedTodayCount
   };
 }
 
@@ -307,90 +285,92 @@ export async function getOrderByAwb(account: Account, awb: string) {
 }
 
 export async function searchOrdersByAwbFragment(accountId: string, query: string, limit = 10) {
-  const select = {
-    id: true,
-    accountId: true,
-    awb: true,
-    sku: true,
-    qty: true,
-    color: true,
-    courier: true,
-    packStatus: true,
-    imageUrl: true,
-    createdAt: true
-  } as const;
-  const exact = await prisma.order.findMany({
-    where: { accountId, awb: query },
-    select,
-    orderBy: { createdAt: "desc" },
-    take: limit
-  });
-  const exactAwbs = exact.map((order) => order.awb);
-  const suffix =
-    exact.length < limit
-      ? await prisma.order.findMany({
-          where: {
-            accountId,
-            awb: {
-              endsWith: query,
-              notIn: exactAwbs
+  return withDevTiming("packing awb search", async () => {
+    const select = {
+      id: true,
+      accountId: true,
+      awb: true,
+      sku: true,
+      qty: true,
+      color: true,
+      courier: true,
+      packStatus: true,
+      createdAt: true
+    } as const;
+    const exact = await prisma.order.findMany({
+      where: { accountId, awb: query },
+      select,
+      orderBy: { createdAt: "desc" },
+      take: limit
+    });
+    const exactAwbs = exact.map((order) => order.awb);
+    const suffix =
+      exact.length < limit
+        ? await prisma.order.findMany({
+            where: {
+              accountId,
+              awb: {
+                endsWith: query,
+                notIn: exactAwbs
+              }
+            },
+            select,
+            orderBy: { createdAt: "desc" },
+            take: limit - exact.length
+          })
+        : [];
+    const exactAndSuffixAwbs = [...exactAwbs, ...suffix.map((order) => order.awb)];
+    const contains =
+      exact.length + suffix.length < limit
+        ? await prisma.order.findMany({
+            where: {
+              accountId,
+              awb: {
+                contains: query,
+                notIn: exactAndSuffixAwbs
+              }
+            },
+            select,
+            orderBy: { createdAt: "desc" },
+            take: limit - exact.length - suffix.length
+          })
+        : [];
+    const candidates = [...exact, ...suffix, ...contains];
+    const matches = findAwbSearchMatches({
+      candidates,
+      accountId,
+      query,
+      limit
+    });
+    const matchSkus = Array.from(new Set(matches.flatMap((order) => [order.sku, normalizeSkuForMatching(order.sku)].filter(Boolean))));
+    const mappings =
+      matchSkus.length > 0
+        ? await prisma.skuImageMapping.findMany({
+            where: {
+              accountId,
+              sku: { in: matchSkus },
+              active: true
+            },
+            select: {
+              accountId: true,
+              sku: true,
+              imageUrl: true,
+              cacheStatus: true,
+              cacheFilePath: true,
+              cacheOriginalImageUrl: true,
+              cacheCachedAt: true
             }
-          },
-          select,
-          orderBy: { createdAt: "desc" },
-          take: limit - exact.length
-        })
-      : [];
-  const exactAndSuffixAwbs = [...exactAwbs, ...suffix.map((order) => order.awb)];
-  const contains =
-    exact.length + suffix.length < limit
-      ? await prisma.order.findMany({
-          where: {
-            accountId,
-            awb: {
-              contains: query,
-              notIn: exactAndSuffixAwbs
-            }
-          },
-          select,
-          orderBy: { createdAt: "desc" },
-          take: limit - exact.length - suffix.length
-        })
-      : [];
-  const candidates = [...exact, ...suffix, ...contains];
-  const matches = findAwbSearchMatches({
-    candidates,
-    accountId,
-    query,
-    limit
-  });
-  const matchSkus = Array.from(new Set(matches.flatMap((order) => [order.sku, normalizeSkuForMatching(order.sku)].filter(Boolean))));
-  const mappings =
-    matchSkus.length > 0
-      ? await prisma.skuImageMapping.findMany({
-          where: {
-            accountId,
-            sku: { in: matchSkus },
-            active: true
-          },
-          select: {
-            sku: true,
-            imageUrl: true,
-            cacheStatus: true,
-            cacheFilePath: true,
-            cacheOriginalImageUrl: true,
-            cacheCachedAt: true
-          }
-        })
-      : [];
-  const imageBySku = new Map(mappings.map((mapping) => [normalizeSkuForMatching(mapping.sku), cachedProductImageUrl(mapping)]));
-  const cacheStatusBySku = new Map(mappings.map((mapping) => [normalizeSkuForMatching(mapping.sku), mapping.cacheStatus]));
+          })
+        : [];
+    const imageBySku = new Map(mappings.map((mapping) => [normalizeSkuForMatching(mapping.sku), cachedProductImageUrl(mapping)]));
+    const cacheStatusBySku = new Map(mappings.map((mapping) => [normalizeSkuForMatching(mapping.sku), mapping.cacheStatus]));
 
-  return matches.map((order) => ({
-    ...order,
-    imageUrl: imageBySku.get(normalizeSkuForMatching(order.sku)) ?? null,
-    cacheStatus: cacheStatusBySku.get(normalizeSkuForMatching(order.sku)) ?? null
-  }));
+    return matches.map((order) => ({
+      ...order,
+      cachedImageUrl: imageBySku.get(normalizeSkuForMatching(order.sku)) ?? null,
+      cacheStatus: cacheStatusBySku.get(normalizeSkuForMatching(order.sku)) ?? null
+    }));
+  }, 500);
 }
 
 export async function getOrderWithImage(accountId: string, awb: string) {
@@ -450,7 +430,7 @@ export async function getOrderWithImage(accountId: string, awb: string) {
         }
       }
     }
-  }));
+  }), 500);
 
   if (!order) {
     return null;
@@ -461,6 +441,20 @@ export async function getOrderWithImage(accountId: string, awb: string) {
       accountId,
       active: true,
       sku: { in: Array.from(new Set([order.sku, normalizeSkuForMatching(order.sku)].filter(Boolean))) }
+    },
+    select: {
+      id: true,
+      accountId: true,
+      sku: true,
+      imageUrl: true,
+      productName: true,
+      color: true,
+      size: true,
+      imageHealth: true,
+      cacheStatus: true,
+      cacheFilePath: true,
+      cacheOriginalImageUrl: true,
+      cacheCachedAt: true
     },
     orderBy: { updatedAt: "desc" }
   });

@@ -42,7 +42,9 @@ export default async function AccountsPage({ searchParams }: AccountsPageProps) 
               >
                 <span>
                   <span className="block font-semibold text-slate-950">{account.name}</span>
-                  <span className="text-sm text-slate-500">{account.code}</span>
+                  <span className="text-sm text-slate-500">
+                    {account.code} {!account.active ? "/ inactive" : ""}
+                  </span>
                 </span>
                 <input
                   type="radio"

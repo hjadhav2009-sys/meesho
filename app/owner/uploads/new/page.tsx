@@ -12,7 +12,7 @@ type UploadPageProps = {
 
 export default async function UploadBatchPage({ searchParams }: UploadPageProps) {
   const user = await requireUser(["OWNER"]);
-  await requireAccount(user);
+  const account = await requireAccount(user);
   const params = await searchParams;
   const errorMessage =
     params?.error === "missing-file"
@@ -32,6 +32,16 @@ export default async function UploadBatchPage({ searchParams }: UploadPageProps)
       />
 
       <section className="max-w-2xl rounded-md border border-slate-200 bg-white p-5 shadow-sm">
+        <div className="mb-4 flex items-center justify-between gap-3 rounded-md bg-slate-50 px-4 py-3">
+          <div>
+            <p className="text-xs font-semibold uppercase tracking-wide text-slate-500">Selected account</p>
+            <p className="mt-1 font-bold text-slate-950">{account.name}</p>
+          </div>
+          <a href="/accounts" className="text-sm font-semibold text-berry underline">
+            Switch
+          </a>
+        </div>
+
         {errorMessage ? (
           <div className="mb-4 rounded-md border border-rose-200 bg-rose-50 px-4 py-3 text-sm font-medium text-rose-700">
             {errorMessage}

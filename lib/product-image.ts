@@ -59,7 +59,7 @@ export function productImageStateText(
   cacheStatus?: string | null
 ) {
   if (state === "loaded") {
-    return cacheStatus === "CACHED" ? "Cached image" : "Image mapped";
+    return cacheStatus === "CACHED" ? "Cached image available" : "Image mapped";
   }
 
   if (state === "missing") {
@@ -68,7 +68,7 @@ export function productImageStateText(
     }
 
     if (cacheStatus === "RECHECK_NEEDED") {
-      return "Image needs refresh";
+      return "Cache needed";
     }
 
     return cacheStatus ? "Image not prepared" : "No image URL";

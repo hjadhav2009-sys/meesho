@@ -28,6 +28,9 @@ import {
   productImageCacheRelativeDir,
   readImageCacheMeta,
   safeImageCacheSegment,
+  signCachedImagePath,
+  signedCachedProductImageUrl,
+  verifySignedCachedImageUrl,
   writeImageCacheMeta
 } from "../lib/image-cache";
 import { canImportPreviewIssues, isOrderPreviewSourceType, reviewProblemIssues } from "../lib/import/preview";
@@ -53,6 +56,7 @@ import { canDeactivateUser, shouldCloseSessionsAfterPasswordReset, validateWorke
 import {
   awbSearchSchema,
   loginSchema,
+  ownerAccountSchema,
   parsedOrderSchema,
   skuImageMappingSchema,
   uploadBatchSchema
@@ -271,6 +275,11 @@ const accountWisePlan = planAccountSkuMappingImport(
 assert.equal(accountWisePlan.updated[0]?.accountId, "a1", "Account-wise import matches account by name");
 assert.equal(accountWisePlan.unchanged[0]?.accountId, "a2", "Account-wise import matches account by code");
 assert.equal(accountWisePlan.created[0]?.accountId, "a1", "Empty account cells use selected account");
+assert.notEqual(
+  accountWisePlan.updated[0]?.imageUrl,
+  accountWisePlan.unchanged[0]?.imageUrl,
+  "Same SKU in two accounts keeps different image URLs"
+);
 
 const selectedOnlyPlan = planAccountSkuMappingImport(
   [],
@@ -460,6 +469,7 @@ assert.equal(canUseFirstRunSetup(1), false, "First-run setup is blocked after an
 assert.equal(validateFirstRunSetupPassword("demo1234", "demo1234").valid, false, "Setup reuses demo password rejection");
 assert.equal(validateFirstRunSetupPassword("better123", "different123").valid, false, "Setup rejects mismatched passwords");
 assert.equal(validateFirstRunSetupPassword("better123", "better123").valid, true, "Setup accepts valid matching password");
+assert.equal(ownerAccountSchema.parse({ name: "Second Account", code: "Second Account", active: true }).code, "second-account", "Owner account code is normalized");
 
 assert.equal(normalizeIp("::ffff:192.168.1.10"), "192.168.1.10", "IPv4-mapped IPs normalize");
 assert.equal(isIpInCidr("192.168.1.10", "192.168.0.0/16"), true, "Local CIDR allows Wi-Fi IP");
@@ -471,6 +481,7 @@ assert.equal(getInitialProductImageState("https://example.com/image.jpg"), "load
 assert.equal(getInitialProductImageState("not-a-url"), "broken", "Product image state separates invalid URLs from missing mappings");
 assert.equal(productImageStateText("missing", false), "No image URL", "Product image state labels missing URLs clearly");
 assert.equal(productImageStateText("loading", true, true), "External image slow", "Product image state labels slow external images clearly");
+assert.equal(productImageStateText("loaded", true, false, "CACHED"), "Cached image available", "Product image state labels cached local images clearly");
 assert.equal(productImageStateText("broken", true), "Image URL failed", "Product image state labels failed image loads clearly");
 assert.equal(picklistSummaryProductNameLabel({ imageUrl: "https://example.com/image.jpg", imageHealth: "MAPPED", productName: null }), "Mapped image, no product name", "Picklist summary shows mapped SKU without product name");
 assert.equal(picklistSummaryProductNameLabel(null), "No mapping", "Picklist summary shows no mapping separately");
@@ -495,6 +506,56 @@ assert.equal(isAllowedCachedImageFileName("other.jpg"), false, "Arbitrary cached
 assert.equal(parseProductImageCacheRoutePath(["meesho", "a1", "SKU1", "card.webp"])?.relativePath, "meesho/a1/SKU1/card.webp", "Valid cache route path parses");
 assert.equal(parseProductImageCacheRoutePath(["meesho", "a1", "SKU1", "meta.json"]), null, "Cache route rejects meta.json");
 assert.equal(parseProductImageCacheRoutePath(["meesho", "a1", "..", "card.webp"]), null, "Cache route rejects traversal segments");
+const parsedCachedImagePath = parseProductImageCacheRoutePath(["meesho", "a1", "SKU1", "card.webp"]);
+assert.ok(parsedCachedImagePath, "Signed cache URL tests have a parsed route path");
+const signedCacheUrl = signedCachedProductImageUrl({
+  relativePath: parsedCachedImagePath.relativePath,
+  accountId: parsedCachedImagePath.accountId,
+  exp: 2_000_000_000
+});
+const signedCacheUrlParams = new URL(`http://localhost${signedCacheUrl}`).searchParams;
+assert.equal(signedCacheUrl.startsWith("/product-images/meesho/a1/SKU1/card.webp?"), true, "Signed cached image URL uses the local product image route");
+assert.equal(signedCacheUrlParams.get("exp"), "2000000000", "Signed cached image URL includes an expiry");
+assert.equal(
+  verifySignedCachedImageUrl({
+    parsedPath: parsedCachedImagePath,
+    token: signedCacheUrlParams.get("token"),
+    exp: signedCacheUrlParams.get("exp"),
+    now: new Date("2026-05-26T00:00:00.000Z")
+  }),
+  true,
+  "Valid signed cached image token verifies without database access"
+);
+assert.equal(
+  verifySignedCachedImageUrl({
+    parsedPath: parsedCachedImagePath,
+    token: "invalid",
+    exp: signedCacheUrlParams.get("exp"),
+    now: new Date("2026-05-26T00:00:00.000Z")
+  }),
+  false,
+  "Invalid cached image token is rejected"
+);
+assert.equal(
+  verifySignedCachedImageUrl({
+    parsedPath: parsedCachedImagePath,
+    token: signCachedImagePath({ relativePath: parsedCachedImagePath.relativePath, accountId: parsedCachedImagePath.accountId, exp: 1 }),
+    exp: 1,
+    now: new Date("2026-05-26T00:00:00.000Z")
+  }),
+  false,
+  "Expired cached image token is rejected"
+);
+assert.equal(
+  verifySignedCachedImageUrl({
+    parsedPath: { ...parsedCachedImagePath, accountId: "a2", relativePath: "meesho/a2/SKU1/card.webp" },
+    token: signedCacheUrlParams.get("token"),
+    exp: signedCacheUrlParams.get("exp"),
+    now: new Date("2026-05-26T00:00:00.000Z")
+  }),
+  false,
+  "Signed cached image token is bound to account and relative path"
+);
 assert.equal(canUserAccessCachedImage({ role: "OWNER", accountId: null }, "a2"), true, "Owner can access any account cached image");
 assert.equal(canUserAccessCachedImage({ role: "PICKER", accountId: "a1" }, "a2"), false, "Worker cannot access another account cached image");
 assert.equal(canUserAccessCachedImage(null, "a1"), false, "Unauthenticated cached image access is denied");
@@ -507,9 +568,38 @@ assert.equal(
     cacheFilePath: "meesho/a1/SKU1/card.webp",
     cacheOriginalImageUrl: "https://example.com/image.jpg",
     cacheCachedAt: new Date("2026-05-25T00:00:00.000Z")
-  })?.startsWith("/product-images/meesho/a1/SKU1/card.webp?v="),
+  })?.startsWith("/product-images/meesho/a1/SKU1/card.webp?"),
   true,
-  "Cached image URL serves local product image route"
+  "Cached image URL serves signed local product image route"
+);
+assert.match(
+  cachedProductImageUrl({
+    accountId: "a1",
+    sku: "SKU1",
+    imageUrl: "https://example.com/image.jpg",
+    cacheStatus: "CACHED",
+    cacheFilePath: "meesho/a1/SKU1/card.webp",
+    cacheOriginalImageUrl: "https://example.com/image.jpg"
+  }) ?? "",
+  /[?&]token=/,
+  "Cached image URL includes a signed token"
+);
+assert.equal(
+  cachedProductImageUrl({
+    accountId: "a1",
+    sku: "SKU1",
+    imageUrl: "https://example.com/image.jpg",
+    cacheStatus: "CACHED",
+    cacheFilePath: "meesho/a2/SKU1/card.webp",
+    cacheOriginalImageUrl: "https://example.com/image.jpg"
+  }),
+  null,
+  "Account A mapping cannot generate Account B cached image URL"
+);
+assert.notEqual(
+  productImageCacheRelativeDir({ accountId: "a1", sku: "DUPLICATE-SKU" }),
+  productImageCacheRelativeDir({ accountId: "a2", sku: "DUPLICATE-SKU" }),
+  "Same SKU in two accounts maps to different cached image paths"
 );
 assert.equal(
   cachedProductImageUrl({
@@ -636,11 +726,17 @@ const productImageRoute = readFileSync(join(repoRoot, "app", "product-images", "
 const pickerPage = readFileSync(join(repoRoot, "app", "picker", "page.tsx"), "utf8");
 const pickerDetailPage = readFileSync(join(repoRoot, "app", "picker", "[sku]", "page.tsx"), "utf8");
 const packingPage = readFileSync(join(repoRoot, "app", "packing", "page.tsx"), "utf8");
+const packingActions = readFileSync(join(repoRoot, "app", "packing", "actions.ts"), "utf8");
+const packingSearchRoute = readFileSync(join(repoRoot, "app", "packing", "search", "route.ts"), "utf8");
 const packingResultPage = readFileSync(join(repoRoot, "app", "packing", "[awb]", "page.tsx"), "utf8");
 const reviewPage = readFileSync(join(repoRoot, "app", "owner", "uploads", "[batchId]", "review", "page.tsx"), "utf8");
+const ownerAccountsPage = readFileSync(join(repoRoot, "app", "owner", "accounts", "page.tsx"), "utf8");
+const ownerAccountsActions = readFileSync(join(repoRoot, "app", "owner", "accounts", "actions.ts"), "utf8");
 const skuExportRoute = readFileSync(join(repoRoot, "app", "owner", "sku-mappings", "export", "route.ts"), "utf8");
 const ownerUsersPage = readFileSync(join(repoRoot, "app", "owner", "users", "page.tsx"), "utf8");
 const ownerUsersActions = readFileSync(join(repoRoot, "app", "owner", "users", "actions.ts"), "utf8");
+const appShell = readFileSync(join(repoRoot, "components", "AppShell.tsx"), "utf8");
+const dataHelpers = readFileSync(join(repoRoot, "lib", "data.ts"), "utf8");
 const changePasswordAction = readFileSync(join(repoRoot, "app", "change-password", "actions.ts"), "utf8");
 const ownerSystemPage = readFileSync(join(repoRoot, "app", "owner", "system", "page.tsx"), "utf8");
 const windowsProdPs1 = readFileSync(join(repoRoot, "scripts", "windows", "start-local-prod.ps1"), "utf8");
@@ -682,18 +778,32 @@ assert.match(pickerPage, /sticky top-\[88px\]/, "Picker filters stay reachable o
 assert.match(pickerPage, /cacheStatus={group.mapping\?\.cacheStatus}/, "Picker card passes cache status to image component");
 assert.match(pickerDetailPage, /fixed inset-x-0 bottom-0/, "Picker detail has mobile sticky bottom actions");
 assert.match(pickerDetailPage, /mapping\?\.cachedImageUrl/, "Picker detail uses cached image URL first");
-assert.match(packingPage, /<AwbBarcodeScanner[\s\S]*Selected account/, "Packing page places the scanner before lower-priority dashboard details");
+assert.match(packingPage, /<AwbBarcodeScanner[\s\S]*Packed today/, "Packing page places the scanner before lower-priority dashboard details");
+assert.doesNotMatch(packingPage, /recentScans/, "Packing page does not wait on recent scan logs before showing scanner");
 assert.match(packingResultPage, /Quantity to pack/, "Packing result makes quantity prominent on mobile");
 assert.match(packingResultPage, /fixed inset-x-0 bottom-0/, "Packing result has mobile sticky confirm actions");
 assert.match(packingResultPage, /mapping\?\.cachedImageUrl/, "Packing card uses cached image URL first");
 assert.match(reviewPage, /<details[\s\S]*Picklist SKU summary rows/, "Upload review makes picklist summary rows collapsible");
 assert.match(reviewPage, /Prepare today&apos;s product images/, "Upload review exposes daily image cache preparation");
+assert.match(awbScannerComponent, /src={suggestion.cachedImageUrl}/, "Manual AWB suggestions use cached signed image URL first");
 assert.match(awbScannerComponent, /cacheStatus={suggestion.cacheStatus}/, "Manual AWB suggestions pass cached image status");
+assert.match(packingSearchRoute, /cachedImageUrl/, "AWB suggestion API returns cachedImageUrl only for product images");
+assert.doesNotMatch(packingSearchRoute, /imageUrl: order\.imageUrl/, "AWB suggestion API does not return slow external image URLs");
+assert.match(dataHelpers, /awb: query[\s\S]*endsWith: query[\s\S]*contains: query/, "AWB search queries exact, suffix, then contains");
+assert.match(dataHelpers, /withDevTiming\("packing awb search"[\s\S]*500\)/, "AWB search has 500ms dev timing logs");
+assert.match(packingActions, /writeScanLogLater[\s\S]*redirect\(`\/packing\/\$\{encodeURIComponent\(matchedOrder\.awb\)\}`\)/, "Packing search redirects before scan logging can block order opening");
 assert.match(productImageRoute, /getCurrentUser/, "Cached image route checks session without login redirect");
+assert.match(productImageRoute, /verifySignedCachedImageUrl/, "Cached image route verifies signed image URLs");
+assert.equal(productImageRoute.indexOf("verifySignedCachedImageUrl") < productImageRoute.indexOf("const user = await getCurrentUser"), true, "Signed cached image route avoids database auth before serving normal image requests");
 assert.match(productImageRoute, /status: 401/, "Cached image route returns 401 for unauthenticated image requests");
 assert.match(productImageRoute, /canUserAccessCachedImage/, "Cached image route enforces account access");
 assert.match(skuExportRoute, /cache_status/, "Full SKU export includes cache status");
 assert.match(skuExportRoute, /product_name[\s\S]*color[\s\S]*size/, "Full SKU export includes auto-filled metadata");
+assert.match(appShell, /\/owner\/accounts/, "Owner navigation includes account management");
+assert.match(ownerAccountsPage, /Create account/, "Owner accounts page supports account creation");
+assert.match(ownerAccountsPage, /Deactivate|Reactivate/, "Owner accounts page supports activate/deactivate controls");
+assert.match(ownerAccountsActions, /OWNER_ACCOUNT_CREATED/, "Owner account creation is audited");
+assert.match(ownerAccountsActions, /OWNER_ACCOUNT_DEACTIVATED/, "Owner account deactivation is audited");
 assert.match(ownerUsersPage, /Passwords are securely hashed and cannot be viewed/, "Owner users page explains passwords cannot be viewed");
 assert.match(ownerUsersPage, /Force password change on next login/, "Owner password reset can force next-login password change");
 assert.match(ownerUsersActions, /passwordHash: hashPassword\(password\)/, "Owner password reset stores only a password hash");
@@ -704,6 +814,7 @@ assert.match(windowsLauncher + windowsEnvUtils, /dotenv/, "Windows launcher load
 assert.match(windowsLauncher, /SKIP_PRISMA_MIGRATE/, "Windows launcher defaults migration skip for local production");
 assert.match(windowsCheckEnv, /printEnvironmentSummary/, "check-env prints a masked environment summary");
 assert.match(productImageComponent, /decoding="async"/, "Product images decode asynchronously");
+assert.match(productImageComponent, /state !== "loading" \|\| !isExternalSrc/, "ProductImage does not show slow external warning for local cached images");
 assert.match(productImageComponent, /Check this image/, "Owner image diagnostics include a manual client recheck button");
 assert.match(productImageComponent, /imageHealth === "BROKEN" \|\| manualCheck/, "Successful image loads only update health when repairing or manually checking a mapping");
 assert.match(changePasswordAction, /await clearSession\(\);\s*redirect\("\/login\?passwordChanged=1"\)/, "Password changes clear session and redirect to login");
@@ -716,6 +827,8 @@ assert.match(sqliteSchema, /@@unique\(\[accountId, sku\]\)/, "SQLite schema keep
 assert.match(postgresSchema, /@@unique\(\[accountId, sku\]\)/, "PostgreSQL schema keeps SKU mappings unique by account and SKU");
 assert.match(sqliteSchema, /cacheStatus\s+ImageCacheStatus/, "SQLite schema stores cache status metadata");
 assert.match(postgresSchema, /cacheStatus\s+ImageCacheStatus/, "PostgreSQL schema stores cache status metadata");
+assert.match(sqliteSchema, /active\s+Boolean\s+@default\(true\)[\s\S]*@@index\(\[active\]\)/, "SQLite schema supports active account management");
+assert.match(postgresSchema, /active\s+Boolean\s+@default\(true\)[\s\S]*@@index\(\[active\]\)/, "PostgreSQL schema supports active account management");
 assert.match(gitignore, /\*\.pdf/, "Git ignores real PDF files");
 assert.match(gitignore, /storage\/product-images\//, "Git ignores local product image cache");
 assert.equal(existsSync(join(repoRoot, "scripts", "windows", "start-local-prod.ps1")), true, "Windows production PowerShell script exists");
@@ -725,5 +838,8 @@ assert.equal(existsSync(join(repoRoot, "docs", "cloudflare-tunnel", "config.yml.
 assert.equal(existsSync(join(repoRoot, "docs", "cloudflare-tunnel", "security-setup.md")), true, "Cloudflare security setup doc exists");
 assert.equal(existsSync(join(repoRoot, "docs", "windows-server-setup.md")), true, "Windows server setup doc exists");
 assert.equal(existsSync(join(repoRoot, ".env.local.production.example")), true, "Local production env example exists");
+assert.equal(existsSync(join(repoRoot, "app", "owner", "accounts", "page.tsx")), true, "Owner accounts page exists");
+assert.equal(existsSync(join(repoRoot, "prisma", "migrations", "20260526093000_account_management", "migration.sql")), true, "SQLite account management migration exists");
+assert.equal(existsSync(join(repoRoot, "prisma", "migrations-postgres", "20260526093000_account_management", "migration.sql")), true, "PostgreSQL account management migration exists");
 
 console.log("Validation tests passed.");
